@@ -225,7 +225,8 @@
     stars: [],
     started: false,
     lastCarrotTime: 0,
-    carrotDelay: 1200,
+    carrotDelay: 600,
+    endingType: null,
     celebrating: 0,
     rabbit: { x: 0, y: 0, size: 0, bounce: 0, happy: 0, eating: 0 },
     turtle: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
@@ -253,6 +254,31 @@
       speed: Math.random() * 2 + 0.5,
       phase: Math.random() * Math.PI * 2,
     });
+  }
+
+  // 4 visually distinct ending types
+  const ENDING_TYPES = ['arc', 'spiral', 'bounce', 'float'];
+
+  // Flight path calculator per ending type
+  function flightPos(sx, sy, tx, ty, p, arcH, type, offset) {
+    const bx = sx + (tx - sx) * p;
+    const by = sy + (ty - sy) * p;
+    if (type === 'spiral') {
+      const a = p * Math.PI * 3.5 + offset;
+      const r = (1 - p) * arcH * 0.45;
+      return { x: bx + Math.cos(a) * r, y: by - r * 0.7 - Math.sin(a) * r * 0.35 };
+    }
+    if (type === 'bounce') {
+      const h = Math.abs(Math.sin(p * Math.PI * 4 + offset)) * arcH * (0.15 + p * 0.85);
+      return { x: bx, y: by - h };
+    }
+    if (type === 'float') {
+      const sway = Math.sin(p * Math.PI * 5 + offset) * arcH * 0.15 * (1 - p * 0.6);
+      const ep = easeInOutCubic(p);
+      return { x: sx + (tx - sx) * p + sway, y: sy + (ty - sy) * ep };
+    }
+    // arc (default) - big smooth parabola
+    return { x: bx, y: by - Math.sin(p * Math.PI) * arcH };
   }
 
   // ===== Layout =====
@@ -379,39 +405,54 @@
     drawMoonRabbit(mx, my, mr, t);
   }
 
-  // ===== Moon Rabbit (friend on the moon) - BIGGER =====
+  // ===== Moon Rabbit (friend on the moon) - BIGGER & MORE ANIMATED =====
   function drawMoonRabbit(mx, my, mr, t) {
-    const s = mr * 0.55;
-    const bobY = Math.sin(t * 1.5) * s * 0.05;
+    const s = mr * 0.75;
+    const bobY = Math.sin(t * 1.5) * s * 0.08;
+
+    // Mini jump cycle
+    const jumpCycle = t * 0.6;
+    const jumpSin = Math.sin(jumpCycle * Math.PI * 2);
+    const miniJump = Math.max(0, jumpSin) * s * 0.15;
+
+    // Body sway
+    const sway = Math.sin(t * 1.0) * 0.06;
 
     ctx.save();
-    ctx.translate(mx - mr * 0.1, my - mr * 0.15 + bobY);
+    ctx.translate(mx - mr * 0.1, my - mr * 0.15 + bobY - miniJump);
+    ctx.rotate(sway);
 
     // During ending celebration, moon rabbit bounces excitedly
     const excitedBounce = (G.ending && G.endingPhase === 'celebrating')
       ? Math.abs(Math.sin(t * 8)) * s * 0.3 : 0;
     ctx.translate(0, -excitedBounce);
 
+    // Squash and stretch during jump
+    const squashX = miniJump > 0 ? 1 - (miniJump / (s * 0.15)) * 0.08 : 1 + Math.max(0, -jumpSin) * 0.06;
+    const stretchY = miniJump > 0 ? 1 + (miniJump / (s * 0.15)) * 0.08 : 1 - Math.max(0, -jumpSin) * 0.06;
+    ctx.scale(squashX, stretchY);
+
     // Body
     ellipse(0, 0, s * 0.35, s * 0.38, C.moonDark);
     ellipse(0, s * 0.03, s * 0.22, s * 0.25, C.moon);
 
-    // Ears
+    // Ears - with wiggle
+    const earWiggle = Math.sin(t * 2.2) * 0.1;
     ctx.save();
     ctx.translate(-s * 0.1, -s * 0.35);
-    ctx.rotate(-0.2);
+    ctx.rotate(-0.2 + earWiggle);
     ellipse(0, -s * 0.2, s * 0.07, s * 0.22, C.moonDark);
     ellipse(0, -s * 0.2, s * 0.04, s * 0.16, '#d4a0a0');
     ctx.restore();
     ctx.save();
     ctx.translate(s * 0.08, -s * 0.35);
-    ctx.rotate(0.15);
+    ctx.rotate(0.15 - earWiggle);
     ellipse(0, -s * 0.2, s * 0.07, s * 0.22, C.moonDark);
     ellipse(0, -s * 0.2, s * 0.04, s * 0.16, '#d4a0a0');
     ctx.restore();
 
-    // Arms waving hello
-    const armWave = Math.sin(t * 2.5) * 0.3;
+    // Arms waving hello - more lively
+    const armWave = Math.sin(t * 3) * 0.4 + Math.sin(t * 1.5) * 0.15;
     ctx.save();
     ctx.translate(-s * 0.28, s * 0.0);
     ctx.rotate(-0.5 + armWave);
@@ -443,9 +484,9 @@
     }
 
     // Cheeks
-    ctx.globalAlpha = 0.2;
-    circle(-s * 0.14, s * 0.0, s * 0.04, '#c09080');
-    circle(s * 0.14, s * 0.0, s * 0.04, '#c09080');
+    ctx.globalAlpha = 0.25;
+    circle(-s * 0.14, s * 0.0, s * 0.05, '#c09080');
+    circle(s * 0.14, s * 0.0, s * 0.05, '#c09080');
     ctx.globalAlpha = 1;
 
     // Nose
@@ -459,9 +500,10 @@
     ctx.arc(0, -s * 0.01, s * 0.025, 0.3, Math.PI - 0.3);
     ctx.stroke();
 
-    // Feet
-    ellipse(-s * 0.1, s * 0.3, s * 0.08, s * 0.04, C.moonDark);
-    ellipse(s * 0.1, s * 0.3, s * 0.08, s * 0.04, C.moonDark);
+    // Feet - kick during jump
+    const footKick = miniJump > 0 ? Math.sin(jumpCycle * Math.PI * 4) * s * 0.04 : 0;
+    ellipse(-s * 0.1 - footKick, s * 0.3, s * 0.08, s * 0.04, C.moonDark);
+    ellipse(s * 0.1 + footKick, s * 0.3, s * 0.08, s * 0.04, C.moonDark);
 
     ctx.restore();
   }
@@ -1319,7 +1361,8 @@
       const distS = G.squid.visible ? Math.hypot(x - G.squid.x, y - G.squid.y) : 999;
       const distC = G.cat.visible ? Math.hypot(x - G.cat.x, y - G.cat.y) : 999;
       const distD = G.duck.visible ? Math.hypot(x - G.duck.x, y - G.duck.y) : 999;
-      if (distR > size * 2.5 && distT > size * 2 && distS > size * 2 && distC > size * 2 && distD > size * 2) {
+      const distM = Math.hypot(x - G.moonX, y - G.moonY);
+      if (distR > size * 2.5 && distT > size * 2 && distS > size * 2 && distC > size * 2 && distD > size * 2 && distM > G.moonR + size * 1.5) {
         ok = true;
         break;
       }
@@ -1383,7 +1426,6 @@
     const x = 20, y = 20;
 
     drawCarrotShape(x + s * 0.4, y + s * 0.5, s * 1.1, 0);
-
     ctx.fillStyle = '#fff';
     ctx.font = `bold ${s}px -apple-system, sans-serif`;
     ctx.textAlign = 'left';
@@ -1410,8 +1452,8 @@
   function drawEndingText(t) {
     if (G.endingPhase !== 'done') return;
     const w = canvas.width, h = canvas.height;
-    const alpha = 0.5 + Math.sin(t * 2.5) * 0.3;
     const fontSize = Math.min(w, h) * 0.05;
+    const alpha = 0.5 + Math.sin(t * 2.5) * 0.3;
     ctx.globalAlpha = alpha;
     ctx.fillStyle = C.moon;
     ctx.font = `${fontSize}px -apple-system, sans-serif`;
@@ -1442,9 +1484,10 @@
 
   function updateEnding(dt, now) {
     G.endingTime += dt;
+    const type = G.endingType || 'arc';
 
     if (G.endingPhase === 'flying') {
-      const duration = 4;
+      const duration = type === 'float' ? 5 : 4;
       const p = easeInOutCubic(Math.min(1, G.endingTime / duration));
 
       const targetRX = G.moonX - G.moonR * 0.5;
@@ -1457,71 +1500,76 @@
       const targetCY = G.moonY + G.moonR * 0.5;
       const targetDX = G.moonX - G.moonR * 1.8;
       const targetDY = G.moonY - G.moonR * 0.1;
-      const arcHeight = canvas.height * 0.3;
+      const arcH = canvas.height * 0.3;
 
-      G.flightRabbit.x = G.flightRabbit.startX + (targetRX - G.flightRabbit.startX) * p;
-      G.flightRabbit.y = G.flightRabbit.startY + (targetRY - G.flightRabbit.startY) * p
-        - Math.sin(p * Math.PI) * arcHeight;
+      // Each character gets a unique offset so they don't move in sync
+      const rp = flightPos(G.flightRabbit.startX, G.flightRabbit.startY, targetRX, targetRY, p, arcH, type, 0);
+      G.flightRabbit.x = rp.x; G.flightRabbit.y = rp.y;
 
-      G.flightTurtle.x = G.flightTurtle.startX + (targetTX - G.flightTurtle.startX) * p;
-      G.flightTurtle.y = G.flightTurtle.startY + (targetTY - G.flightTurtle.startY) * p
-        - Math.sin(p * Math.PI) * arcHeight * 0.8;
+      const tp = flightPos(G.flightTurtle.startX, G.flightTurtle.startY, targetTX, targetTY, p, arcH * 0.8, type, 1.2);
+      G.flightTurtle.x = tp.x; G.flightTurtle.y = tp.y;
 
-      G.flightSquid.x = G.flightSquid.startX + (targetSX - G.flightSquid.startX) * p;
-      G.flightSquid.y = G.flightSquid.startY + (targetSY - G.flightSquid.startY) * p
-        - Math.sin(p * Math.PI) * arcHeight * 1.1;
+      const sp = flightPos(G.flightSquid.startX, G.flightSquid.startY, targetSX, targetSY, p, arcH * 1.1, type, 2.4);
+      G.flightSquid.x = sp.x; G.flightSquid.y = sp.y;
 
-      G.flightCat.x = G.flightCat.startX + (targetCX - G.flightCat.startX) * p;
-      G.flightCat.y = G.flightCat.startY + (targetCY - G.flightCat.startY) * p
-        - Math.sin(p * Math.PI) * arcHeight * 0.9;
+      const cp = flightPos(G.flightCat.startX, G.flightCat.startY, targetCX, targetCY, p, arcH * 0.9, type, 3.6);
+      G.flightCat.x = cp.x; G.flightCat.y = cp.y;
 
-      G.flightDuck.x = G.flightDuck.startX + (targetDX - G.flightDuck.startX) * p;
-      G.flightDuck.y = G.flightDuck.startY + (targetDY - G.flightDuck.startY) * p
-        - Math.sin(p * Math.PI) * arcHeight * 1.0;
+      const dp = flightPos(G.flightDuck.startX, G.flightDuck.startY, targetDX, targetDY, p, arcH, type, 4.8);
+      G.flightDuck.x = dp.x; G.flightDuck.y = dp.y;
 
-      // Trail particles
-      if (Math.random() < 0.5) {
-        G.particles.push({
-          x: G.flightRabbit.x, y: G.flightRabbit.y + G.rabbit.size * 0.3,
-          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
-          life: 0.8, decay: 0.02, size: 3 + Math.random() * 4, type: 'star',
-        });
+      // Trail particles - style varies per ending type
+      const trailType = (type === 'float' || type === 'spiral') ? 'heart' : 'star';
+      const trailAlt = trailType === 'heart' ? 'star' : 'heart';
+
+      function trail(fx, fy, sz, rate, pt) {
+        if (Math.random() < rate) {
+          const vx = type === 'spiral' ? (Math.random() - 0.5) * 4 : (Math.random() - 0.5) * 2;
+          const vy = type === 'bounce' ? -1 - Math.random() * 2 : 1 + Math.random() * 2;
+          G.particles.push({ x: fx, y: fy + sz * 0.25, vx, vy,
+            life: 0.8, decay: 0.02, size: 3 + Math.random() * 4, type: pt });
+        }
       }
-      if (G.turtle.visible && Math.random() < 0.4) {
-        G.particles.push({
-          x: G.flightTurtle.x, y: G.flightTurtle.y + G.turtle.size * 0.2,
-          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
-          life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'star',
-        });
-      }
-      if (G.squid.visible && Math.random() < 0.4) {
-        G.particles.push({
-          x: G.flightSquid.x, y: G.flightSquid.y + G.squid.size * 0.2,
-          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
-          life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'heart',
-        });
-      }
-      if (G.cat.visible && Math.random() < 0.4) {
-        G.particles.push({
-          x: G.flightCat.x, y: G.flightCat.y + G.cat.size * 0.2,
-          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
-          life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'star',
-        });
-      }
-      if (G.duck.visible && Math.random() < 0.4) {
-        G.particles.push({
-          x: G.flightDuck.x, y: G.flightDuck.y + G.duck.size * 0.2,
-          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
-          life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'heart',
-        });
-      }
+      trail(G.flightRabbit.x, G.flightRabbit.y, G.rabbit.size, 0.5, trailType);
+      if (G.turtle.visible) trail(G.flightTurtle.x, G.flightTurtle.y, G.turtle.size, 0.4, trailAlt);
+      if (G.squid.visible) trail(G.flightSquid.x, G.flightSquid.y, G.squid.size, 0.4, trailType);
+      if (G.cat.visible) trail(G.flightCat.x, G.flightCat.y, G.cat.size, 0.4, trailAlt);
+      if (G.duck.visible) trail(G.flightDuck.x, G.flightDuck.y, G.duck.size, 0.4, trailType);
+
       G.rabbit.happy = 10;
 
       if (G.endingTime >= duration) {
         G.endingPhase = 'celebrating';
         G.endingTime = 0;
-        spawnParticles(G.moonX, G.moonY, 25, 'heart');
-        spawnParticles(G.moonX, G.moonY, 25, 'star');
+        // Arrival burst varies per type
+        if (type === 'spiral') {
+          // ring explosion outward
+          for (let i = 0; i < 30; i++) {
+            const a = (Math.PI * 2 * i) / 30;
+            G.particles.push({ x: G.moonX, y: G.moonY,
+              vx: Math.cos(a) * 5, vy: Math.sin(a) * 5,
+              life: 1, decay: 0.015, size: 5 + Math.random() * 4, type: i % 2 === 0 ? 'star' : 'heart' });
+          }
+        } else if (type === 'bounce') {
+          // upward pop fountain
+          for (let i = 0; i < 40; i++) {
+            G.particles.push({ x: G.moonX + (Math.random() - 0.5) * G.moonR * 2, y: G.moonY,
+              vx: (Math.random() - 0.5) * 3, vy: -3 - Math.random() * 5,
+              life: 1, decay: 0.012, size: 4 + Math.random() * 5, type: 'heart' });
+          }
+        } else if (type === 'float') {
+          // gentle shower from above
+          for (let i = 0; i < 35; i++) {
+            G.particles.push({ x: G.moonX + (Math.random() - 0.5) * G.moonR * 4,
+              y: G.moonY - G.moonR * 2 - Math.random() * G.moonR,
+              vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2,
+              life: 1, decay: 0.01, size: 4 + Math.random() * 4, type: i % 3 === 0 ? 'star' : 'heart' });
+          }
+        } else {
+          // arc: classic burst
+          spawnParticles(G.moonX, G.moonY, 25, 'heart');
+          spawnParticles(G.moonX, G.moonY, 25, 'star');
+        }
       }
     }
 
@@ -1529,17 +1577,46 @@
       G.rabbit.happy = 10;
       G.rabbit.bounce = Math.max(0.5, G.rabbit.bounce);
 
-      if (Math.sin(G.endingTime * 3) > 0.8) {
-        if (Math.random() < 0.3) {
+      // Ongoing celebration effects vary per type
+      if (type === 'spiral') {
+        // Particles spiral outward continuously
+        if (Math.random() < 0.4) {
+          const a = G.endingTime * 4 + Math.random() * Math.PI;
+          const r = G.moonR * (0.5 + Math.random());
+          G.particles.push({ x: G.moonX + Math.cos(a) * r, y: G.moonY + Math.sin(a) * r,
+            vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
+            life: 0.8, decay: 0.02, size: 4 + Math.random() * 4, type: Math.random() < 0.5 ? 'star' : 'heart' });
+        }
+      } else if (type === 'bounce') {
+        // Particles pop up repeatedly like popcorn
+        if (Math.sin(G.endingTime * 6) > 0.5 && Math.random() < 0.6) {
+          G.particles.push({
+            x: G.moonX + (Math.random() - 0.5) * G.moonR * 3,
+            y: G.moonY + G.moonR,
+            vx: (Math.random() - 0.5) * 2, vy: -4 - Math.random() * 4,
+            life: 0.9, decay: 0.02, size: 4 + Math.random() * 5, type: 'heart' });
+        }
+      } else if (type === 'float') {
+        // Gentle hearts/stars drift down like snow
+        if (Math.random() < 0.35) {
+          G.particles.push({
+            x: G.moonX + (Math.random() - 0.5) * G.moonR * 5,
+            y: G.moonY - G.moonR * 2,
+            vx: (Math.random() - 0.5) * 1, vy: 0.5 + Math.random() * 1.5,
+            life: 1, decay: 0.01, size: 3 + Math.random() * 4, type: Math.random() < 0.6 ? 'heart' : 'star' });
+        }
+      } else {
+        // arc: random bursts
+        if (Math.sin(G.endingTime * 3) > 0.7 && Math.random() < 0.5) {
           spawnParticles(
             G.moonX + (Math.random() - 0.5) * G.moonR * 3,
             G.moonY + (Math.random() - 0.5) * G.moonR * 2,
-            3, Math.random() < 0.5 ? 'heart' : 'star'
+            5, Math.random() < 0.5 ? 'heart' : 'star'
           );
         }
       }
 
-      if (G.endingTime >= 4) {
+      if (G.endingTime >= 5) {
         G.endingPhase = 'done';
         G.endingTime = 0;
       }
@@ -1551,6 +1628,7 @@
     G.ending = false;
     G.endingTime = 0;
     G.endingPhase = '';
+    G.endingType = null;
     G.carrots = [];
     G.flyingCarrots = [];
     G.particles = [];
@@ -1607,6 +1685,7 @@
     }
 
     if (G.score === 15) {
+      G.endingType = ENDING_TYPES[Math.floor(Math.random() * ENDING_TYPES.length)];
       setTimeout(() => startFlyToMoon(), 800);
     }
 
@@ -1630,15 +1709,7 @@
 
     if (G.ending) return;
 
-    // Tap the moon (moon rabbit) → dim the screen
-    if (Math.hypot(px - G.moonX, py - G.moonY) < G.moonR * 1.3) {
-      G.dimming = 1;
-      playSparkle();
-      spawnParticles(G.moonX, G.moonY, 8, 'star');
-      return;
-    }
-
-    // Check carrot hits
+    // Check carrot hits FIRST (fixes clicks near moon)
     for (let i = G.carrots.length - 1; i >= 0; i--) {
       const c = G.carrots[i];
       if (c.scale < 0.5) continue;
@@ -1651,6 +1722,14 @@
         G.carrots.splice(i, 1);
         return;
       }
+    }
+
+    // Tap the moon (moon rabbit) → dim the screen
+    if (Math.hypot(px - G.moonX, py - G.moonY) < G.moonR * 1.3) {
+      G.dimming = 1;
+      playSparkle();
+      spawnParticles(G.moonX, G.moonY, 8, 'star');
+      return;
     }
 
     // Tap characters
@@ -1766,17 +1845,17 @@
     if (G.carrots.length === 0 && G.flyingCarrots.length === 0 && !G.ending) {
       if (now - G.lastCarrotTime > G.carrotDelay) {
         spawnCarrot();
-        if (G.score > 3 && Math.random() < 0.3) {
-          setTimeout(spawnCarrot, 400);
+        if (G.score > 3 && Math.random() < 0.4) {
+          setTimeout(spawnCarrot, 200);
         }
-        if (G.score > 8 && Math.random() < 0.2) {
-          setTimeout(spawnCarrot, 800);
+        if (G.score > 8 && Math.random() < 0.3) {
+          setTimeout(spawnCarrot, 400);
         }
       }
     }
 
     G.carrots.forEach(c => {
-      c.scale = Math.min(1, c.scale + dt * 2.5);
+      c.scale = Math.min(1, c.scale + dt * 5);
       c.wobble += dt * 3;
     });
 
