@@ -34,6 +34,18 @@
     squidLight: '#f0c0cc',
     squidMantle: '#e090a5',
     squidFin: '#d4889a',
+    catBody: '#d04040',
+    catLight: '#e86868',
+    catDark: '#a03030',
+    catInner: '#f0a0a0',
+    catNose: '#e07070',
+    catEar: '#b03030',
+    duckBody: '#d04040',
+    duckLight: '#e86868',
+    duckBeak: '#e8a030',
+    duckBeakDark: '#c88020',
+    duckWing: '#b83030',
+    duckFeet: '#e8a030',
     eye: '#1a1a2e',
     carrotBody: '#e8863a',
     carrotTop: '#4a8a5a',
@@ -218,6 +230,8 @@
     rabbit: { x: 0, y: 0, size: 0, bounce: 0, happy: 0, eating: 0 },
     turtle: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
     squid: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetY: 0 },
+    cat: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
+    duck: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
     groundY: 0,
     moonX: 0, moonY: 0, moonR: 0,
     ending: false,
@@ -226,6 +240,8 @@
     flightRabbit: { x: 0, y: 0 },
     flightTurtle: { x: 0, y: 0 },
     flightSquid: { x: 0, y: 0 },
+    flightCat: { x: 0, y: 0 },
+    flightDuck: { x: 0, y: 0 },
     dimming: 0, // screen darkness when moon rabbit is tapped
   };
 
@@ -259,6 +275,14 @@
     G.squid.size = s * 0.8;
     G.squid.x = w * 0.78;
     G.squid.targetY = G.groundY - G.squid.size * 1.5;
+
+    G.cat.size = s * 0.9;
+    G.cat.targetX = w * 0.72;
+    G.cat.y = G.groundY - G.cat.size * 0.05;
+
+    G.duck.size = s * 0.85;
+    G.duck.targetX = w * 0.35;
+    G.duck.y = G.groundY + G.duck.size * 0.05;
 
   }
   layout();
@@ -867,6 +891,316 @@
     }
   }
 
+  // ===== Draw Red Cat (빨간 고양이) =====
+  function drawCatAt(x, y, size, t, enter) {
+    const s = size;
+    const scale = easeOutBack(Math.min(1, enter));
+
+    // Sitting idle sway
+    const swayCycle = t * 1.2;
+    const swayTilt = Math.sin(swayCycle) * 0.04;
+    const breathe = Math.sin(t * 2.0) * s * 0.01;
+
+    ctx.save();
+    ctx.translate(x, y + breathe);
+    ctx.rotate(swayTilt);
+    ctx.scale(scale, scale);
+
+    // Shadow
+    if (!G.ending || G.endingTime < 1) {
+      ctx.globalAlpha = 0.12 * (G.ending ? Math.max(0, 1 - G.endingTime) : 1);
+      ellipse(0, s * 0.3, s * 0.38, s * 0.06, '#000');
+      ctx.globalAlpha = 1;
+    }
+
+    // Tail - swishing behind body
+    const tailSwish = Math.sin(t * 2.5) * 0.6;
+    ctx.save();
+    ctx.translate(-s * 0.35, s * 0.1);
+    ctx.rotate(-0.3 + tailSwish);
+    // Tail curve
+    ctx.strokeStyle = C.catBody;
+    ctx.lineWidth = s * 0.09;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-s * 0.25 + Math.sin(t * 2.5) * s * 0.1, -s * 0.15, -s * 0.35, -s * 0.3);
+    ctx.stroke();
+    // Tail tip
+    circle(-s * 0.35, -s * 0.3, s * 0.055, C.catDark);
+    ctx.restore();
+
+    // Hind legs (sitting)
+    ellipse(-s * 0.2, s * 0.22, s * 0.13, s * 0.08, C.catBody);
+    ellipse(s * 0.2, s * 0.22, s * 0.13, s * 0.08, C.catBody);
+    // Paws
+    ellipse(-s * 0.25, s * 0.28, s * 0.07, s * 0.04, C.catDark);
+    ellipse(s * 0.25, s * 0.28, s * 0.07, s * 0.04, C.catDark);
+
+    // Body
+    ellipse(0, s * 0.02, s * 0.32, s * 0.3, C.catBody);
+    // Belly
+    ellipse(0, s * 0.08, s * 0.2, s * 0.2, C.catInner);
+
+    // Front paws
+    ellipse(-s * 0.15, s * 0.25, s * 0.07, s * 0.05, C.catBody);
+    ellipse(s * 0.15, s * 0.25, s * 0.07, s * 0.05, C.catBody);
+
+    // Head
+    ellipse(0, -s * 0.22, s * 0.26, s * 0.23, C.catBody);
+
+    // Ears (triangular)
+    ctx.fillStyle = C.catBody;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.22, -s * 0.35);
+    ctx.lineTo(-s * 0.12, -s * 0.55);
+    ctx.lineTo(-s * 0.04, -s * 0.35);
+    ctx.fill();
+    ctx.fillStyle = C.catEar;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.19, -s * 0.37);
+    ctx.lineTo(-s * 0.13, -s * 0.50);
+    ctx.lineTo(-s * 0.07, -s * 0.37);
+    ctx.fill();
+
+    ctx.fillStyle = C.catBody;
+    ctx.beginPath();
+    ctx.moveTo(s * 0.22, -s * 0.35);
+    ctx.lineTo(s * 0.12, -s * 0.55);
+    ctx.lineTo(s * 0.04, -s * 0.35);
+    ctx.fill();
+    ctx.fillStyle = C.catEar;
+    ctx.beginPath();
+    ctx.moveTo(s * 0.19, -s * 0.37);
+    ctx.lineTo(s * 0.13, -s * 0.50);
+    ctx.lineTo(s * 0.07, -s * 0.37);
+    ctx.fill();
+
+    // Eyes
+    const blink = Math.sin(t * 0.35 + 1) > 0.97;
+    const eyeY = -s * 0.24;
+    if (blink) {
+      ctx.strokeStyle = C.eye;
+      ctx.lineWidth = s * 0.02;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.14, eyeY);
+      ctx.lineTo(-s * 0.06, eyeY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(s * 0.06, eyeY);
+      ctx.lineTo(s * 0.14, eyeY);
+      ctx.stroke();
+    } else {
+      ellipse(-s * 0.1, eyeY, s * 0.04, s * 0.045, C.eye);
+      ellipse(s * 0.1, eyeY, s * 0.04, s * 0.045, C.eye);
+      circle(-s * 0.09, eyeY - s * 0.02, s * 0.016, '#fff');
+      circle(s * 0.11, eyeY - s * 0.02, s * 0.016, '#fff');
+    }
+
+    // Nose (small triangle)
+    ctx.fillStyle = C.catNose;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.15);
+    ctx.lineTo(-s * 0.025, -s * 0.175);
+    ctx.lineTo(s * 0.025, -s * 0.175);
+    ctx.fill();
+
+    // Whiskers
+    ctx.strokeStyle = C.catInner;
+    ctx.lineWidth = s * 0.012;
+    ctx.lineCap = 'round';
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(side * s * 0.08, -s * 0.16 + i * s * 0.025);
+        ctx.lineTo(side * s * 0.28, -s * 0.17 + i * s * 0.04);
+        ctx.stroke();
+      }
+    }
+
+    // Mouth
+    ctx.strokeStyle = C.catDark;
+    ctx.lineWidth = s * 0.015;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.15);
+    ctx.lineTo(0, -s * 0.12);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-s * 0.03, -s * 0.11, s * 0.03, -0.3, Math.PI * 0.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(s * 0.03, -s * 0.11, s * 0.03, Math.PI * 0.5, Math.PI + 0.3);
+    ctx.stroke();
+
+    // Cheeks
+    ctx.globalAlpha = 0.25;
+    circle(-s * 0.16, -s * 0.13, s * 0.045, C.catInner);
+    circle(s * 0.16, -s * 0.13, s * 0.045, C.catInner);
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  function drawCat(t) {
+    const c = G.cat;
+    if (!c.visible) return;
+    if (G.ending) {
+      drawCatAt(G.flightCat.x, G.flightCat.y, c.size, t, c.enter);
+    } else {
+      drawCatAt(c.x, c.y, c.size, t, c.enter);
+    }
+  }
+
+  // ===== Draw Red Duck (빨간 오리) =====
+  function drawDuckAt(x, y, size, t, enter) {
+    const s = size;
+    const scale = easeOutBack(Math.min(1, enter));
+
+    // Waddle animation
+    const waddleCycle = t * 2.0;
+    const waddleTilt = Math.sin(waddleCycle * Math.PI) * 0.08;
+    const waddleBob = Math.abs(Math.sin(waddleCycle * Math.PI)) * s * 0.03;
+
+    ctx.save();
+    ctx.translate(x, y - waddleBob);
+    ctx.rotate(waddleTilt);
+    ctx.scale(scale, scale);
+
+    // Shadow
+    if (!G.ending || G.endingTime < 1) {
+      ctx.globalAlpha = 0.12 * (G.ending ? Math.max(0, 1 - G.endingTime) : 1);
+      ellipse(0, s * 0.32, s * 0.35, s * 0.06, '#000');
+      ctx.globalAlpha = 1;
+    }
+
+    // Feet (webbed)
+    const footAngle = Math.sin(waddleCycle * Math.PI) * 0.15;
+    ctx.save();
+    ctx.translate(-s * 0.12, s * 0.28);
+    ctx.rotate(-footAngle);
+    ellipse(0, 0, s * 0.08, s * 0.035, C.duckFeet);
+    // Toes
+    ctx.fillStyle = C.duckFeet;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.06, 0);
+    ctx.lineTo(-s * 0.1, -s * 0.02);
+    ctx.lineTo(-s * 0.05, -s * 0.01);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(s * 0.02, 0);
+    ctx.lineTo(s * 0.06, -s * 0.02);
+    ctx.lineTo(s * 0.04, s * 0.01);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(s * 0.12, s * 0.28);
+    ctx.rotate(footAngle);
+    ellipse(0, 0, s * 0.08, s * 0.035, C.duckFeet);
+    ctx.fillStyle = C.duckFeet;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.02, 0);
+    ctx.lineTo(-s * 0.06, -s * 0.02);
+    ctx.lineTo(-s * 0.04, s * 0.01);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(s * 0.06, 0);
+    ctx.lineTo(s * 0.1, -s * 0.02);
+    ctx.lineTo(s * 0.05, -s * 0.01);
+    ctx.fill();
+    ctx.restore();
+
+    // Tail feathers
+    ctx.fillStyle = C.duckWing;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.2, s * 0.05);
+    ctx.quadraticCurveTo(-s * 0.35, -s * 0.05, -s * 0.3, s * 0.12);
+    ctx.quadraticCurveTo(-s * 0.25, s * 0.15, -s * 0.15, s * 0.1);
+    ctx.fill();
+
+    // Body (round)
+    ellipse(0, s * 0.05, s * 0.3, s * 0.28, C.duckBody);
+    // Belly
+    ellipse(0, s * 0.1, s * 0.2, s * 0.2, C.duckLight);
+
+    // Wings - gentle flap
+    const wingFlap = Math.sin(t * 2.5) * 0.15;
+    ctx.save();
+    ctx.translate(-s * 0.25, s * 0.0);
+    ctx.rotate(-0.2 + wingFlap);
+    ellipse(0, s * 0.02, s * 0.08, s * 0.18, C.duckWing);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(s * 0.25, s * 0.0);
+    ctx.rotate(0.2 - wingFlap);
+    ellipse(0, s * 0.02, s * 0.08, s * 0.18, C.duckWing);
+    ctx.restore();
+
+    // Head
+    ellipse(0, -s * 0.22, s * 0.22, s * 0.2, C.duckBody);
+
+    // Beak
+    ctx.fillStyle = C.duckBeak;
+    ctx.beginPath();
+    ctx.moveTo(s * 0.08, -s * 0.17);
+    ctx.quadraticCurveTo(s * 0.3, -s * 0.19, s * 0.28, -s * 0.14);
+    ctx.quadraticCurveTo(s * 0.3, -s * 0.1, s * 0.08, -s * 0.12);
+    ctx.quadraticCurveTo(s * 0.12, -s * 0.145, s * 0.08, -s * 0.17);
+    ctx.fill();
+    // Beak line
+    ctx.strokeStyle = C.duckBeakDark;
+    ctx.lineWidth = s * 0.012;
+    ctx.beginPath();
+    ctx.moveTo(s * 0.1, -s * 0.145);
+    ctx.lineTo(s * 0.26, -s * 0.145);
+    ctx.stroke();
+
+    // Eyes
+    const blink = Math.sin(t * 0.45 + 2) > 0.97;
+    const eyeY = -s * 0.24;
+    if (blink) {
+      ctx.strokeStyle = C.eye;
+      ctx.lineWidth = s * 0.025;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.06, eyeY);
+      ctx.lineTo(s * 0.02, eyeY);
+      ctx.stroke();
+    } else {
+      ellipse(-s * 0.02, eyeY, s * 0.04, s * 0.045, C.eye);
+      circle(-s * 0.01, eyeY - s * 0.018, s * 0.016, '#fff');
+    }
+
+    // Cheek
+    ctx.globalAlpha = 0.25;
+    circle(-s * 0.1, -s * 0.14, s * 0.04, C.duckLight);
+    circle(s * 0.08, -s * 0.14, s * 0.04, C.duckLight);
+    ctx.globalAlpha = 1;
+
+    // Head tuft (little feathers on top)
+    ctx.fillStyle = C.duckBody;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.02, -s * 0.4);
+    ctx.quadraticCurveTo(s * 0.0, -s * 0.52, s * 0.04, -s * 0.45);
+    ctx.quadraticCurveTo(s * 0.06, -s * 0.5, s * 0.08, -s * 0.42);
+    ctx.lineTo(s * 0.02, -s * 0.38);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawDuck(t) {
+    const d = G.duck;
+    if (!d.visible) return;
+    if (G.ending) {
+      drawDuckAt(G.flightDuck.x, G.flightDuck.y, d.size, t, d.enter);
+    } else {
+      drawDuckAt(d.x, d.y, d.size, t, d.enter);
+    }
+  }
+
   // ===== Draw Carrot =====
   function drawCarrotShape(x, y, size, wobble) {
     ctx.save();
@@ -983,7 +1317,9 @@
       const distR = Math.hypot(x - G.rabbit.x, y - G.rabbit.y);
       const distT = G.turtle.visible ? Math.hypot(x - G.turtle.x, y - G.turtle.y) : 999;
       const distS = G.squid.visible ? Math.hypot(x - G.squid.x, y - G.squid.y) : 999;
-      if (distR > size * 2.5 && distT > size * 2 && distS > size * 2) {
+      const distC = G.cat.visible ? Math.hypot(x - G.cat.x, y - G.cat.y) : 999;
+      const distD = G.duck.visible ? Math.hypot(x - G.duck.x, y - G.duck.y) : 999;
+      if (distR > size * 2.5 && distT > size * 2 && distS > size * 2 && distC > size * 2 && distD > size * 2) {
         ok = true;
         break;
       }
@@ -1096,6 +1432,8 @@
     G.flightRabbit = { x: G.rabbit.x, y: G.rabbit.y, startX: G.rabbit.x, startY: G.rabbit.y };
     G.flightTurtle = { x: G.turtle.x, y: G.turtle.y, startX: G.turtle.x, startY: G.turtle.y };
     G.flightSquid = { x: G.squid.x, y: G.squid.y, startX: G.squid.x, startY: G.squid.y };
+    G.flightCat = { x: G.cat.x, y: G.cat.y, startX: G.cat.x, startY: G.cat.y };
+    G.flightDuck = { x: G.duck.x, y: G.duck.y, startX: G.duck.x, startY: G.duck.y };
     G.rabbit.happy = 10;
     G.rabbit.bounce = 0;
 
@@ -1115,6 +1453,10 @@
       const targetTY = G.moonY + G.moonR * 0.3;
       const targetSX = G.moonX + G.moonR * 0.8;
       const targetSY = G.moonY - G.moonR * 0.3;
+      const targetCX = G.moonX + G.moonR * 1.3;
+      const targetCY = G.moonY + G.moonR * 0.5;
+      const targetDX = G.moonX - G.moonR * 1.8;
+      const targetDY = G.moonY - G.moonR * 0.1;
       const arcHeight = canvas.height * 0.3;
 
       G.flightRabbit.x = G.flightRabbit.startX + (targetRX - G.flightRabbit.startX) * p;
@@ -1128,6 +1470,14 @@
       G.flightSquid.x = G.flightSquid.startX + (targetSX - G.flightSquid.startX) * p;
       G.flightSquid.y = G.flightSquid.startY + (targetSY - G.flightSquid.startY) * p
         - Math.sin(p * Math.PI) * arcHeight * 1.1;
+
+      G.flightCat.x = G.flightCat.startX + (targetCX - G.flightCat.startX) * p;
+      G.flightCat.y = G.flightCat.startY + (targetCY - G.flightCat.startY) * p
+        - Math.sin(p * Math.PI) * arcHeight * 0.9;
+
+      G.flightDuck.x = G.flightDuck.startX + (targetDX - G.flightDuck.startX) * p;
+      G.flightDuck.y = G.flightDuck.startY + (targetDY - G.flightDuck.startY) * p
+        - Math.sin(p * Math.PI) * arcHeight * 1.0;
 
       // Trail particles
       if (Math.random() < 0.5) {
@@ -1147,6 +1497,20 @@
       if (G.squid.visible && Math.random() < 0.4) {
         G.particles.push({
           x: G.flightSquid.x, y: G.flightSquid.y + G.squid.size * 0.2,
+          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
+          life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'heart',
+        });
+      }
+      if (G.cat.visible && Math.random() < 0.4) {
+        G.particles.push({
+          x: G.flightCat.x, y: G.flightCat.y + G.cat.size * 0.2,
+          vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
+          life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'star',
+        });
+      }
+      if (G.duck.visible && Math.random() < 0.4) {
+        G.particles.push({
+          x: G.flightDuck.x, y: G.flightDuck.y + G.duck.size * 0.2,
           vx: (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2,
           life: 0.7, decay: 0.02, size: 3 + Math.random() * 3, type: 'heart',
         });
@@ -1198,6 +1562,10 @@
     G.turtle.enter = 0;
     G.squid.visible = false;
     G.squid.enter = 0;
+    G.cat.visible = false;
+    G.cat.enter = 0;
+    G.duck.visible = false;
+    G.duck.enter = 0;
     layout();
     G.lastCarrotTime = performance.now();
     spawnCarrot();
@@ -1213,16 +1581,28 @@
     playMunch();
     spawnParticles(r.x, r.y - r.size * 0.3, 8, 'heart');
 
-    if (G.score === 5 && !G.turtle.visible) {
+    if (G.score === 3 && !G.turtle.visible) {
       G.turtle.visible = true;
       G.turtle.enter = 0;
       G.turtle.x = -G.turtle.size;
       playFanfare();
     }
-    if (G.score === 10 && !G.squid.visible) {
+    if (G.score === 6 && !G.squid.visible) {
       G.squid.visible = true;
       G.squid.enter = 0;
       G.squid.y = -G.squid.size * 2;
+      playFanfare();
+    }
+    if (G.score === 9 && !G.cat.visible) {
+      G.cat.visible = true;
+      G.cat.enter = 0;
+      G.cat.x = canvas.width + G.cat.size;
+      playFanfare();
+    }
+    if (G.score === 12 && !G.duck.visible) {
+      G.duck.visible = true;
+      G.duck.enter = 0;
+      G.duck.x = -G.duck.size * 2;
       playFanfare();
     }
 
@@ -1300,6 +1680,24 @@
         return;
       }
     }
+
+    if (G.cat.visible) {
+      const ct = G.cat;
+      if (Math.hypot(px - ct.x, py - ct.y) < ct.size * 0.5) {
+        playSparkle();
+        spawnParticles(ct.x, ct.y - ct.size * 0.2, 5, 'heart');
+        return;
+      }
+    }
+
+    if (G.duck.visible) {
+      const dk = G.duck;
+      if (Math.hypot(px - dk.x, py - dk.y) < dk.size * 0.5) {
+        playSparkle();
+        spawnParticles(dk.x, dk.y - dk.size * 0.2, 5, 'star');
+        return;
+      }
+    }
   }
 
   canvas.addEventListener('pointerdown', e => {
@@ -1349,6 +1747,16 @@
       G.squid.y += (G.squid.targetY - G.squid.y) * Math.min(1, dt * 3);
     }
 
+    if (G.cat.visible) {
+      if (G.cat.enter < 1) G.cat.enter += dt * 1.2;
+      G.cat.x += (G.cat.targetX - G.cat.x) * Math.min(1, dt * 1.5);
+    }
+
+    if (G.duck.visible) {
+      if (G.duck.enter < 1) G.duck.enter += dt * 1.2;
+      G.duck.x += (G.duck.targetX - G.duck.x) * Math.min(1, dt * 1.5);
+    }
+
     if (G.celebrating > 0) {
       G.celebrating -= dt;
       r.happy = Math.max(r.happy, 2);
@@ -1393,8 +1801,9 @@
 
     if (G.ending) {
       drawTurtle(t);
-
+      drawDuck(t);
       drawRabbit(t);
+      drawCat(t);
       drawSquid(t);
       drawParticles();
       drawScore();
@@ -1416,7 +1825,9 @@
     });
 
     drawTurtle(t);
+    drawDuck(t);
     drawRabbit(t);
+    drawCat(t);
     drawSquid(t);
     drawFlyingCarrots();
     drawParticles();
