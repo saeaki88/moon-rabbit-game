@@ -41,6 +41,7 @@ Canvas 2D와 Web Audio API를 사용하는 순수 JavaScript 프로젝트입니�
 - 저장소: <https://github.com/saeaki88/moon-rabbit-game>
 - 기본 브랜치: `master`
 - 원격: `origin`, 로컬 `master`가 `origin/master`를 추적합니다.
+- Git 인증: 기존 SSH 키, `origin` 주소는 `git@github.com:saeaki88/moon-rabbit-game.git`입니다.
 - `.claude/settings.local.json`은 개인 도구 권한 설정이며 Git에 포함하지 않습니다.
 
 ## 검증
