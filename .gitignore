@@ -1,3 +1,9 @@
 # 로컬 도구 권한과 macOS 메타데이터
 .claude/settings.local.json
 .DS_Store
+
+# 비밀 환경 설정과 개인키
+.env
+.env.*
+*.pem
+*.key
