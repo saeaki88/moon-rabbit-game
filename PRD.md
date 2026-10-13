@@ -37,6 +37,7 @@ game/
 ├── README.md       # 실행 방법과 현재 기능
 ├── PRD.md          # 본 문서
 ├── AGENTS.md       # 저장소 작업 지침
+├── tests/game-smoke.js # 동작 회귀 검사
 ├── .continue-here.md # 인수인계와 후속 수정 후보
 └── .gitignore      # 개인 도구 권한과 OS 메타데이터 제외
 ```
@@ -56,8 +57,8 @@ game/
 ├─ Layout — 반응형 좌표 계산
 ├─ Draw Helpers — ellipse, circle 등
 ├─ Background — sky, stars, moon, ground
-├─ Characters — rabbit, turtle, squid, cat, duck, chick, penguin
-│                (각각 drawXxxAt + drawXxx, 달 위 토끼는 별도 렌더링)
+├─ Characters — rabbit + CHARACTER_SPEC의 친구 9종
+│                (drawXxxAt + 공통 drawCharacters, 달 위 토끼는 별도 렌더링)
 ├─ Items — carrot/cucumber, flyingCarrot, particles
 ├─ UI — score, start/end text
 ├─ Game Logic — spawn, collect, ending sequence
@@ -79,13 +80,20 @@ game/
 | `turtle` | object | visible, x, y, size, enter, targetX |
 | `squid` | object | visible, x, y, size, enter, targetY |
 | `cat`, `duck`, `chick`, `penguin` | object | visible, x, y, size, enter, targetX |
-| `characterOrder[]` | array | 게임 시작 및 리셋 시 섞는 친구 6종 등장 순서 |
+| `lion`, `tiger`, `fox` | object | 사자·호랑이·여우의 상태, 위치, 크기, 진입·터치 반응 |
+| `characterOrder[]` | array | 게임 시작 및 리셋 시 섞는 친구 9종 등장 순서 |
 | `carrotDelay` | number | 채소 기본 스폰 대기 시간, 600ms |
 | `endingType` | string/null | `arc`, `spiral`, `bounce`, `float` 중 선택 |
 | `ending` | bool | 엔딩 시퀀스 진행 중 |
+| `endingPending`, `endingStartAt` | bool, number | 목표 도달 후 800ms 대기, 추가 수집·스폰 차단 |
+| `endingLayout` | object | 중앙 달과 캐릭터별 착륙 좌표 |
+| `spawnTimes[]` | array | 추가 채소 생성 예약 시간, 목표 도달·리셋 시 비움 |
+| `soundEnabled` | bool | 배경음악·효과음 공통 켜기/끄기, 리셋 후 유지 |
 | `endingPhase` | string | `'flying'` → `'celebrating'` → `'done'` |
 | `flightXxx` | object | 엔딩 비행 중 캐릭터별 보간 좌표 |
 | `dimming` | number | 달 터치 후 어두워짐 강도, 시간에 따라 감쇠 |
+
+친구는 공통 `CHARACTER_SPEC`에서 크기, 두 줄 배치, 진입 방향, 드로잉 함수, 터치 파티클을 정의한다. 이 명세를 기반으로 상태·진입·렌더링·터치·비행·리셋을 처리하며, 친구 상태에는 모두 `targetX`, `targetY`, `react`가 있다. 수집 목표는 `CARROT_GOAL = 14`로 유지하고 친구 수에 맞춰 등장 점수를 배분한다.
 
 ### 4.3 렌더링 파이프라인 (매 프레임)
 
@@ -102,8 +110,7 @@ loop(now)
  └─ draw()
      ├─ drawSky → drawStarsBackground → drawMoon → drawGround
      ├─ 채소 렌더링 (glow + drawVeggieShape)
-     ├─ drawTurtle → drawDuck → drawPenguin → drawChick
-     │   → drawRabbit → drawCat → drawSquid (Z-order)
+     ├─ drawCharacters — 토끼와 보이는 친구를 y 좌표 순으로 렌더링
      ├─ drawFlyingCarrots → drawParticles
      └─ drawScore / drawStartText / drawEndingText
 
@@ -125,12 +132,14 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 | 채소 수 | 이벤트 |
 |---------|--------|
 | 0 | 깡총이(토끼)만 대기, "터치해서 시작!" |
-| **2·4·6·8·10·12** | 섞인 친구 순서에 따라 한 명씩 등장 + 팡파레 |
+| **2·3·4·6·7·8·10·11·12** | 섞인 친구 순서에 따라 한 명씩 등장 + 팡파레 |
 | 3 이상 | 기본 스폰 외 40% 확률로 200ms 후 채소 추가 생성 |
 | 7 이상 | 위 조건에 더해 30% 확률로 400ms 후 채소 추가 생성 |
-| **14** | 무작위 엔딩 선택, 0.8초 후 달 비행 시작 |
+| **14** | 추가 수집·스폰 중지, 무작위 엔딩 선택, 0.8초 후 달 비행 시작 |
 
 친구 순서는 Fisher–Yates 방식으로 섞는다. 당근과 오이는 각각 50% 확률로 생성되며 같은 점수로 계산한다. 수집 애니메이션이 끝나야 점수가 증가한다.
+
+비행 중인 채소까지 포함해 14개 이상 집지 못하도록 제한한다. 추가 스폰 예약은 업데이트 루프에서 처리하며 목표 도달과 리셋 시 취소한다. 화면에는 최대 3개를 생성하고, 채소끼리와 친구의 현재 위치·도착 위치가 겹치지 않는 위치를 찾는다. 공간이 없으면 생성 시점을 미룬다.
 
 ### 5.3 캐릭터 특징
 
@@ -143,6 +152,9 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 | **빨간 오리** | 좌측 하단 | 왼쪽에서 진입, 뒤뚱 걷기와 날개 움직임 |
 | **노랑 병아리** | 중앙 우측 하단 | 오른쪽에서 진입, 쪼기와 날개 펄럭임 |
 | **파란 펭귄** | 좌측 하단 | 왼쪽에서 진입, 고글, 뒤뚱 걷기와 지느러미 움직임 |
+| **사자** | 뒤쪽 줄 중앙 우측 | 오른쪽에서 진입, 둥근 갈기와 웃는 얼굴, 터치 시 갈기 흔들기와 하트 |
+| **호랑이** | 앞쪽 줄 중앙 좌측 | 왼쪽에서 진입, 주황색 줄무늬와 꼬리, 터치 시 점프와 별 |
+| **여우** | 뒤쪽 줄 중앙 | 오른쪽에서 진입, 큰 귀와 하얀 꼬리 끝, 터치 시 꼬리 흔들기와 하트 |
 | **달토끼** | 달 위 | 팔 흔들기, 엔딩 시 신나게 뜀 |
 
 ### 5.4 인터랙션
@@ -155,17 +167,20 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 | 오징어 | sparkle 사운드, 하트 파티클 |
 | 고양이 / 병아리 | sparkle 사운드, 하트 파티클 |
 | 오리 / 펭귄 | sparkle 사운드, 별 파티클 |
+| 사자 | 작은 낮은 소리, 갈기 흔들기·점프·하트 파티클 |
+| 호랑이 | sparkle 사운드, 점프·별 파티클 |
+| 여우 | sparkle 사운드, 꼬리 흔들기·점프·하트 파티클 |
 | 달 / 달토끼 | sparkle 사운드, 별 파티클, 화면 어두워짐 후 서서히 복원 |
 
-채소 히트 테스트가 달·캐릭터 히트 테스트보다 먼저 수행된다. 엔딩 중에는 터치를 무시하고, `done` 단계에서만 재시작한다.
+채소 히트 테스트가 달·캐릭터 히트 테스트보다 먼저 수행된다. 터치 반경은 `max(28px, 채소 크기 × 1.55)`다. 엔딩 대기·진행 중에는 게임 터치를 무시하고, `done` 단계에서만 재시작한다. 소리 버튼은 게임 단계와 관계없이 조작할 수 있다.
 
 ### 5.5 엔딩 시퀀스
 
-1. **Flying** (`arc`/`spiral`/`bounce`는 4초, `float`는 5초): 캐릭터별 오프셋으로 달 근처까지 비행, 달 1.6배 확대, 별/하트 트레일. 확대된 달의 원 밖으로 착륙 좌표를 배치한다.
+1. **Flying** (`arc`/`spiral`/`bounce`는 4초, `float`는 5초): 진입 중인 친구를 도착 위치에서 완전히 보이게 한 뒤 비행을 시작한다. 캐릭터별 오프셋으로 비행하고, 달은 화면 중앙으로 이동하면서 1.6배 확대된다. 별/하트 트레일을 남기며 달 아래 두 줄로 착륙한다. 비행 좌표는 캐릭터 크기를 고려해 화면 안으로 제한한다.
 2. **Celebrating** (5초): 엔딩 종류에 따라 폭발·나선·분수·눈처럼 내리는 파티클, 달토끼 신나서 뜀.
 3. **Done**: "한번 더!" 텍스트 표시. 터치 시 점수와 친구 상태를 리셋하고, 등장 순서를 다시 섞어 채소를 생성한다.
 
-엔딩 궤적은 `arc`(포물선), `spiral`(나선), `bounce`(통통 튀기), `float`(부유) 중 무작위로 선택한다. 착륙 좌표의 화면 경계와 캐릭터 진입 완료 여부는 후속 검증 대상이다.
+엔딩 궤적은 `arc`(포물선), `spiral`(나선), `bounce`(통통 튀기), `float`(부유) 중 무작위로 선택한다. 모든 궤적은 마지막 프레임에 지정된 착륙 좌표로 끝난다. 엔딩 완료 후 화면 크기가 바뀌면 달과 착륙 좌표도 다시 배치한다.
 
 ---
 
@@ -178,11 +193,14 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 | `playPop` | 채소 터치 | sine 800→250Hz, 0.12s |
 | `playMunch` | 채소 도착 (먹기) | sine 3연타 350/430/510Hz |
 | `playSparkle` | 캐릭터 터치 | sine 1400→900Hz, 0.15s |
+| `playLionRoar` | 사자 터치 | 작은 triangle 180→95Hz, 0.35s |
 | `playFanfare` | 친구 등장 | triangle C5-E5-G5-C6 아르페지오 |
 | `playFlyToMoonSong` | 엔딩 비행 | triangle 멜로디 + 긴 음의 sine 하모니 |
 | `startBGM` / `scheduleBGM` | 첫 터치 이후 | triangle 자장가 루프, 0.5초 앞까지 음표 예약 |
 
 첫 터치에서 AudioContext를 생성·재개한다. 별도 음원 다운로드 없이 효과음과 배경음악을 생성한다.
+
+모든 사운드는 공통 master GainNode를 거쳐 소리 버튼으로 음소거한다. 이미 예약된 음표에도 적용되며 재시작 시 선택을 유지한다. Web Audio 미지원 환경에서도 게임을 시작하고 수집할 수 있다.
 
 ---
 
@@ -203,6 +221,7 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 - `window.resize` 이벤트로 canvas 크기 갱신
 - `layout()` 함수에서 모든 좌표를 `canvas.width/height` 비례로 재계산
 - 캐릭터 크기 = `Math.min(w, h) * 0.13` 기반
+- 일반 플레이의 친구는 두 줄로 배치하며, 엔딩의 달과 착륙 좌표는 화면 비율에 맞춰 중앙과 두 줄로 배치한다.
 
 ---
 
@@ -219,6 +238,7 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 | 2026-03-06 | 깡총이 점프 높이 강화 (0.12→0.25) |
 | 2026-03-10 | 빨간 고양이·빨간 오리 추가, 랜덤 멀티엔딩, 달토끼 강화, 당근 클릭 수정 (기존 커밋 이력 기준) |
 | 2026-10-13 | 로컬 발전분 동기화: 병아리·펭귄, 친구 6종 무작위 등장, 당근/오이, 안경 토끼, 14개 목표, 착륙 좌표 조정. 실제 개발 시점은 이전 세션이며, 이 날짜는 동기화일 |
+| 2026-10-13 | 사자·호랑이·여우와 친구 9종 명세 통합, 두 줄 배치, 넓은 터치 영역, 스폰 겹침 방지, 14개 목표와 엔딩 대기 보호, 중앙 달·화면 내 착륙, 소리 버튼, 회귀 검사 추가 |
 
 ---
 
@@ -226,9 +246,7 @@ loop의 마지막에 drawDimOverlay로 어두워짐 효과 표시
 
 - 난이도 조절 (당근 스폰 속도, 동시 개수)
 - 추가 캐릭터 / 스테이지
-- 터치 히트박스 개선 (유아 손가락 크기 고려)
 - PWA 지원 (오프라인 플레이)
-- 빠른 수집 시 친구 진입과 엔딩 시작의 경합, 스폰 영역과 진입 중 캐릭터 겹침 검증
-- 목표 점수 상수화, 착륙 좌표 및 캐릭터 명세 테이블화 (기존 인수인계의 제안이며 미구현)
+- 실기기에서 다양한 화면 비율과 동시 터치 조작성 확인
 
 우선순위와 과거 audit 메모는 `.continue-here.md`를 참고한다.

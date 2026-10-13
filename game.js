@@ -8,7 +8,6 @@
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
   }
-  window.addEventListener('resize', resize);
   resize();
 
   // ===== Color Palette =====
@@ -61,6 +60,16 @@
     penguinFeet: '#e88030',
     penguinGoggle: '#e8a02a',
     penguinGlass: '#ffdc6a',
+    lionBody: '#edb85c',
+    lionLight: '#ffe0a0',
+    lionMane: '#b96a32',
+    lionManeLight: '#d98a3c',
+    tigerBody: '#ef963e',
+    tigerLight: '#ffe5bf',
+    tigerStripe: '#754b37',
+    foxBody: '#d98148',
+    foxLight: '#fff0d8',
+    foxDark: '#975238',
     eye: '#1a1a2e',
     carrotBody: '#e8863a',
     carrotTop: '#4a8a5a',
@@ -76,12 +85,23 @@
 
   // ===== Audio =====
   let audioCtx = null;
+  let masterGain = null;
 
   function ensureAudio() {
     if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio) return;
+      try {
+        audioCtx = new Audio();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(G.soundEnabled ? 1 : 0, audioCtx.currentTime);
+        masterGain.connect(audioCtx.destination);
+      } catch (_) {
+        audioCtx = null;
+        return;
+      }
     }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   }
 
   function tone(freq, dur, type, vol, ramp) {
@@ -91,7 +111,7 @@
     const gain = audioCtx.createGain();
     osc.type = type || 'sine';
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(masterGain);
     osc.frequency.setValueAtTime(freq, t);
     if (ramp) osc.frequency.exponentialRampToValueAtTime(ramp, t + dur);
     gain.gain.setValueAtTime(vol || 0.2, t);
@@ -109,7 +129,7 @@
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(masterGain);
       const start = t + i * 0.07;
       osc.frequency.setValueAtTime(350 + i * 80, start);
       osc.frequency.exponentialRampToValueAtTime(150, start + 0.05);
@@ -122,6 +142,8 @@
 
   function playSparkle() { tone(1400, 0.15, 'sine', 0.08, 900); }
 
+  function playLionRoar() { tone(180, 0.35, 'triangle', 0.07, 95); }
+
   function playFanfare() {
     if (!audioCtx) return;
     [523, 659, 784, 1047].forEach((freq, i) => {
@@ -130,7 +152,7 @@
       const gain = audioCtx.createGain();
       osc.type = 'triangle';
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(masterGain);
       osc.frequency.setValueAtTime(freq, t);
       gain.gain.setValueAtTime(0, t);
       gain.gain.linearRampToValueAtTime(0.18, t + 0.04);
@@ -157,7 +179,7 @@
       const gain = audioCtx.createGain();
       osc.type = 'triangle';
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(masterGain);
       osc.frequency.setValueAtTime(note.f, time);
       gain.gain.setValueAtTime(0, time);
       gain.gain.linearRampToValueAtTime(0.15, time + 0.03);
@@ -171,7 +193,7 @@
         const gain2 = audioCtx.createGain();
         osc2.type = 'sine';
         osc2.connect(gain2);
-        gain2.connect(audioCtx.destination);
+        gain2.connect(masterGain);
         osc2.frequency.setValueAtTime(note.f * 1.5, time);
         gain2.gain.setValueAtTime(0, time);
         gain2.gain.linearRampToValueAtTime(0.06, time + 0.03);
@@ -214,7 +236,7 @@
         const gain = audioCtx.createGain();
         osc.type = 'triangle';
         osc.connect(gain);
-        gain.connect(audioCtx.destination);
+        gain.connect(masterGain);
         osc.frequency.setValueAtTime(note.f, bgmNextTime);
         gain.gain.setValueAtTime(0, bgmNextTime);
         gain.gain.linearRampToValueAtTime(0.05, bgmNextTime + 0.03);
@@ -229,7 +251,7 @@
   }
 
   function startBGM() {
-    if (bgmPlaying) return;
+    if (!audioCtx || bgmPlaying) return;
     bgmPlaying = true;
     bgmNextTime = audioCtx.currentTime + 0.5;
     bgmNoteIndex = 0;
@@ -244,32 +266,59 @@
     particles: [],
     stars: [],
     started: false,
+    soundEnabled: true,
+    spawnTimes: [],
     lastCarrotTime: 0,
     carrotDelay: 600,
     endingType: null,
     celebrating: 0,
     rabbit: { x: 0, y: 0, size: 0, bounce: 0, happy: 0, eating: 0 },
-    turtle: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
-    squid: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetY: 0 },
-    cat: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
-    duck: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
-    chick: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
-    penguin: { visible: false, x: 0, y: 0, size: 0, enter: 0, targetX: 0 },
     characterOrder: [],
     groundY: 0,
     moonX: 0, moonY: 0, moonR: 0,
     ending: false,
+    endingPending: false,
+    endingStartAt: 0,
+    endingLayout: null,
     endingTime: 0,
     endingPhase: '',
     flightRabbit: { x: 0, y: 0 },
-    flightTurtle: { x: 0, y: 0 },
-    flightSquid: { x: 0, y: 0 },
-    flightCat: { x: 0, y: 0 },
-    flightDuck: { x: 0, y: 0 },
-    flightChick: { x: 0, y: 0 },
-    flightPenguin: { x: 0, y: 0 },
     dimming: 0, // screen darkness when moon rabbit is tapped
   };
+
+  // One list drives spawning, layout, drawing, touch feedback and ending flights.
+  const CHARACTER_SPEC = {
+    turtle:  { size: 1.1,  x: 0.13, row: 0, from: 'left',  draw: drawTurtleAt,  particle: 'star' },
+    penguin: { size: 0.95, x: 0.31, row: 0, from: 'left',  draw: drawPenguinAt, particle: 'star' },
+    fox:     { size: 0.95, x: 0.5,  row: 0, from: 'right', draw: drawFoxAt,     particle: 'heart' },
+    lion:    { size: 1.05, x: 0.69, row: 0, from: 'right', draw: drawLionAt,    particle: 'heart' },
+    squid:   { size: 0.8,  x: 0.88, row: 0, from: 'top',   draw: drawSquidAt,   particle: 'heart', yOffset: -0.7 },
+    duck:    { size: 0.85, x: 0.13, row: 1, from: 'left',  draw: drawDuckAt,    particle: 'star' },
+    tiger:   { size: 0.95, x: 0.33, row: 1, from: 'left',  draw: drawTigerAt,   particle: 'star' },
+    chick:   { size: 0.7,  x: 0.75, row: 1, from: 'right', draw: drawChickAt,   particle: 'heart' },
+    cat:     { size: 0.9,  x: 0.9,  row: 1, from: 'right', draw: drawCatAt,     particle: 'heart' },
+  };
+  const CHARACTER_NAMES = Object.keys(CHARACTER_SPEC);
+  const CARROT_GOAL = 14;
+  const FRIEND_THRESHOLDS = CHARACTER_NAMES.map((_, i) =>
+    Math.ceil((i + 1) * (CARROT_GOAL - 2) / CHARACTER_NAMES.length));
+  CHARACTER_NAMES.forEach(name => {
+    G[name] = { visible: false, x: 0, y: 0, size: 0, enter: 0, react: 0, targetX: 0, targetY: 0 };
+    G[flightKey(name)] = { x: 0, y: 0 };
+  });
+
+  function flightKey(name) { return 'flight' + name[0].toUpperCase() + name.slice(1); }
+
+  const soundButton = document.getElementById('sound-toggle');
+  soundButton.addEventListener('click', () => {
+    G.soundEnabled = !G.soundEnabled;
+    soundButton.textContent = G.soundEnabled ? '🔊' : '🔇';
+    soundButton.setAttribute('aria-pressed', String(!G.soundEnabled));
+    const label = G.soundEnabled ? '소리 끄기' : '소리 켜기';
+    soundButton.setAttribute('aria-label', label);
+    soundButton.title = label;
+    if (masterGain) masterGain.gain.setValueAtTime(G.soundEnabled ? 1 : 0, audioCtx.currentTime);
+  });
 
   for (let i = 0; i < 70; i++) {
     G.stars.push({
@@ -285,7 +334,6 @@
   const ENDING_TYPES = ['arc', 'spiral', 'bounce', 'float'];
 
   // Character names for random order spawning
-  const CHARACTER_NAMES = ['turtle', 'squid', 'cat', 'duck', 'chick', 'penguin'];
   function shuffleCharacterOrder() {
     const arr = CHARACTER_NAMES.slice();
     for (let i = arr.length - 1; i > 0; i--) {
@@ -296,19 +344,11 @@
   }
   function spawnCharacterByName(name) {
     const ch = G[name];
+    const spec = CHARACTER_SPEC[name];
     ch.visible = true;
     ch.enter = 0;
-    if (name === 'squid') {
-      ch.y = -ch.size * 2;
-    } else if (name === 'cat' || name === 'chick') {
-      ch.x = canvas.width + ch.size;
-    } else if (name === 'turtle') {
-      ch.x = -ch.size;
-    } else if (name === 'penguin') {
-      ch.x = -ch.size * 2;
-    } else {
-      ch.x = -ch.size * 2;
-    }
+    ch.x = spec.from === 'top' ? ch.targetX : spec.from === 'right' ? canvas.width + ch.size : -ch.size;
+    ch.y = spec.from === 'top' ? -ch.size : ch.targetY;
     playFanfare();
   }
 
@@ -322,11 +362,11 @@
       return { x: bx + Math.cos(a) * r, y: by - r * 0.7 - Math.sin(a) * r * 0.35 };
     }
     if (type === 'bounce') {
-      const h = Math.abs(Math.sin(p * Math.PI * 4 + offset)) * arcH * (0.15 + p * 0.85);
+      const h = Math.abs(Math.sin(p * Math.PI * 4 + offset)) * arcH * Math.sin(p * Math.PI);
       return { x: bx, y: by - h };
     }
     if (type === 'float') {
-      const sway = Math.sin(p * Math.PI * 5 + offset) * arcH * 0.15 * (1 - p * 0.6);
+      const sway = Math.sin(p * Math.PI * 5 + offset) * arcH * 0.15 * Math.sin(p * Math.PI);
       const ep = easeInOutCubic(p);
       return { x: sx + (tx - sx) * p + sway, y: sy + (ty - sy) * ep };
     }
@@ -337,40 +377,68 @@
   // ===== Layout =====
   function layout() {
     const w = canvas.width, h = canvas.height;
-    G.groundY = h * 0.78;
+    G.groundY = h * 0.7;
     G.moonR = Math.min(w, h) * 0.13;
-    G.moonX = w * 0.82;
-    G.moonY = h * 0.14;
+    G.moonX = w * 0.8;
+    G.moonY = Math.max(h * 0.16, G.moonR + 16);
 
     const s = Math.min(w, h) * 0.13;
     G.rabbit.size = s;
-    G.rabbit.x = w * 0.5;
-    G.rabbit.y = G.groundY - s * 0.15;
+    G.rabbit.x = w * 0.56;
+    G.rabbit.y = h * 0.87 - s * 0.15;
+    CHARACTER_NAMES.forEach(name => {
+      const ch = G[name], spec = CHARACTER_SPEC[name];
+      ch.size = s * spec.size;
+      ch.targetX = w * spec.x;
+      ch.targetY = h * (spec.row === 0 ? 0.75 : 0.87) + (spec.yOffset || 0) * ch.size;
+      if (!ch.visible || ch.enter >= 1) {
+        ch.x = ch.targetX;
+        ch.y = ch.targetY;
+      } else if (spec.from !== 'top') {
+        ch.y = ch.targetY;
+      }
+    });
 
-    G.turtle.size = s * 1.1;
-    G.turtle.targetX = w * 0.2;
-    G.turtle.y = G.groundY + G.turtle.size * 0.05;
+    const moonY = Math.max(G.moonR * 1.6 + 16, h * 0.22);
+    const backY = Math.max(h * 0.52, moonY + G.moonR * 1.6 + s * 0.7);
+    const frontY = Math.max(h * 0.76, backY + s * 1.55);
+    const targets = { rabbit: { x: w * 0.56, y: frontY } };
+    CHARACTER_NAMES.forEach(name => {
+      const spec = CHARACTER_SPEC[name];
+      targets[name] = { x: w * spec.x, y: spec.row === 0 ? backY : frontY };
+      clampFlight(name, targets[name]);
+    });
+    G.endingLayout = { moonX: w * 0.5, moonY, targets };
+    if (G.ending) {
+      ['rabbit', ...CHARACTER_NAMES].forEach(name => {
+        const flight = G[flightKey(name)];
+        if (G.endingPhase !== 'flying') Object.assign(flight, targets[name]);
+        clampFlight(name, flight);
+      });
+    }
+    // Resizing must not leave a tappable vegetable under a newly positioned friend.
+    G.carrots = G.carrots.filter(c => veggieSpotFree(c.x, c.y, c.size, c));
+  }
 
-    G.squid.size = s * 0.8;
-    G.squid.x = w * 0.78;
-    G.squid.targetY = G.groundY - G.squid.size * 1.5;
+  function clampFlight(name, position) {
+    const s = G[name].size;
+    const side = s * (name === 'cat' ? 0.95 : 0.75);
+    const top = s * (name === 'rabbit' ? 1.25 : 0.95);
+    const bottom = s * (name === 'squid' ? 1.05 : 0.7);
+    position.x = Math.max(side + 8, Math.min(canvas.width - side - 8, position.x));
+    position.y = Math.max(top + 8, Math.min(canvas.height - bottom - 8, position.y));
+  }
 
-    G.cat.size = s * 0.9;
-    G.cat.targetX = w * 0.72;
-    G.cat.y = G.groundY - G.cat.size * 0.05;
-
-    G.duck.size = s * 0.85;
-    G.duck.targetX = w * 0.35;
-    G.duck.y = G.groundY + G.duck.size * 0.05;
-
-    G.chick.size = s * 0.7;
-    G.chick.targetX = w * 0.58;
-    G.chick.y = G.groundY + G.chick.size * 0.1;
-
-    G.penguin.size = s * 0.95;
-    G.penguin.targetX = w * 0.26;
-    G.penguin.y = G.groundY + G.penguin.size * 0.02;
-
+  function drawCharacters(t) {
+    const names = ['rabbit', ...CHARACTER_NAMES].filter(name => name === 'rabbit' || G[name].visible);
+    names.sort((a, b) => (G.ending ? G[flightKey(a)].y - G[flightKey(b)].y : G[a].y - G[b].y));
+    names.forEach(name => {
+      if (name === 'rabbit') { drawRabbit(t); return; }
+      const ch = G[name];
+      const position = G.ending ? G[flightKey(name)] : ch;
+      const hop = Math.sin(Math.min(1, ch.react) * Math.PI) * ch.size * 0.2;
+      CHARACTER_SPEC[name].draw(position.x, position.y - hop, ch.size, t, ch.enter, ch.react);
+    });
   }
   layout();
   shuffleCharacterOrder();
@@ -443,9 +511,13 @@
     if (G.ending && G.endingPhase === 'flying') {
       const p = easeInOutCubic(Math.min(1, G.endingTime / 3));
       mr = G.moonR * (1 + p * 0.6);
+      mx += (G.endingLayout.moonX - mx) * p;
+      my += (G.endingLayout.moonY - my) * p;
     }
     if (G.ending && (G.endingPhase === 'celebrating' || G.endingPhase === 'done')) {
       mr = G.moonR * 1.6;
+      mx = G.endingLayout.moonX;
+      my = G.endingLayout.moonY;
     }
 
     // Glow layers
@@ -858,16 +930,6 @@
     ctx.restore();
   }
 
-  function drawTurtle(t) {
-    const tr = G.turtle;
-    if (!tr.visible) return;
-    if (G.ending) {
-      drawTurtleAt(G.flightTurtle.x, G.flightTurtle.y, tr.size, t, tr.enter);
-    } else {
-      drawTurtleAt(tr.x, tr.y, tr.size, t, tr.enter);
-    }
-  }
-
   // ===== Draw Squid (Dancing!) =====
   function drawSquidAt(x, y, size, t, enter) {
     const s = size;
@@ -1015,16 +1077,6 @@
     }
     ctx.closePath();
     ctx.fill();
-  }
-
-  function drawSquid(t) {
-    const sq = G.squid;
-    if (!sq.visible) return;
-    if (G.ending) {
-      drawSquidAt(G.flightSquid.x, G.flightSquid.y, sq.size, t, sq.enter);
-    } else {
-      drawSquidAt(sq.x, sq.y, sq.size, t, sq.enter);
-    }
   }
 
   // ===== Draw Red Cat (빨간 고양이) =====
@@ -1179,16 +1231,6 @@
     ctx.restore();
   }
 
-  function drawCat(t) {
-    const c = G.cat;
-    if (!c.visible) return;
-    if (G.ending) {
-      drawCatAt(G.flightCat.x, G.flightCat.y, c.size, t, c.enter);
-    } else {
-      drawCatAt(c.x, c.y, c.size, t, c.enter);
-    }
-  }
-
   // ===== Draw Red Duck (빨간 오리) =====
   function drawDuckAt(x, y, size, t, enter) {
     const s = size;
@@ -1327,16 +1369,6 @@
     ctx.restore();
   }
 
-  function drawDuck(t) {
-    const d = G.duck;
-    if (!d.visible) return;
-    if (G.ending) {
-      drawDuckAt(G.flightDuck.x, G.flightDuck.y, d.size, t, d.enter);
-    } else {
-      drawDuckAt(d.x, d.y, d.size, t, d.enter);
-    }
-  }
-
   // ===== Draw Yellow Chick (노랑 병아리) =====
   function drawChickAt(x, y, size, t, enter) {
     const s = size;
@@ -1460,16 +1492,6 @@
     ctx.globalAlpha = 1;
 
     ctx.restore();
-  }
-
-  function drawChick(t) {
-    const ch = G.chick;
-    if (!ch.visible) return;
-    if (G.ending) {
-      drawChickAt(G.flightChick.x, G.flightChick.y, ch.size, t, ch.enter);
-    } else {
-      drawChickAt(ch.x, ch.y, ch.size, t, ch.enter);
-    }
   }
 
   // ===== Draw Penguin (Pororo-style blue penguin with goggles) =====
@@ -1614,14 +1636,217 @@
     ctx.restore();
   }
 
-  function drawPenguin(t) {
-    const p = G.penguin;
-    if (!p.visible) return;
-    if (G.ending) {
-      drawPenguinAt(G.flightPenguin.x, G.flightPenguin.y, p.size, t, p.enter);
-    } else {
-      drawPenguinAt(p.x, p.y, p.size, t, p.enter);
+  // ===== Friendly Fox =====
+  function drawFoxAt(x, y, size, t, enter, react) {
+    const s = size;
+    ctx.save();
+    ctx.translate(x, y + Math.sin(t * 2) * s * 0.015);
+    const scale = easeOutBack(Math.min(1, enter));
+    ctx.scale(scale, scale);
+    if (!G.ending) {
+      ctx.globalAlpha = 0.12;
+      ellipse(0, s * 0.34, s * 0.3, s * 0.05, '#000');
+      ctx.globalAlpha = 1;
     }
+
+    // Bushy tail with a cream tip, swishing faster when tapped.
+    ctx.save();
+    ctx.translate(-s * 0.18, s * 0.15);
+    ctx.rotate(-0.3 + Math.sin(t * (react > 0 ? 12 : 2.5)) * (0.12 + (react || 0) * 0.25));
+    ellipse(-s * 0.19, -s * 0.04, s * 0.26, s * 0.13, C.foxBody);
+    ellipse(-s * 0.36, -s * 0.065, s * 0.11, s * 0.1, C.foxLight);
+    ctx.restore();
+
+    ellipse(0, s * 0.06, s * 0.23, s * 0.28, C.foxBody);
+    ellipse(0, s * 0.09, s * 0.13, s * 0.19, C.foxLight);
+    for (const side of [-1, 1]) {
+      ellipse(side * s * 0.13, s * 0.3, s * 0.09, s * 0.055, C.foxDark);
+      ctx.fillStyle = C.foxBody;
+      ctx.beginPath();
+      ctx.moveTo(side * s * 0.25, -s * 0.32);
+      ctx.lineTo(side * s * 0.23, -s * 0.72);
+      ctx.lineTo(side * s * 0.05, -s * 0.4);
+      ctx.fill();
+      ctx.fillStyle = C.foxLight;
+      ctx.beginPath();
+      ctx.moveTo(side * s * 0.21, -s * 0.39);
+      ctx.lineTo(side * s * 0.215, -s * 0.64);
+      ctx.lineTo(side * s * 0.11, -s * 0.43);
+      ctx.fill();
+    }
+    ellipse(0, -s * 0.27, s * 0.26, s * 0.24, C.foxBody);
+    // White cheeks meet in a pointed muzzle.
+    ctx.fillStyle = C.foxLight;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.24, -s * 0.25);
+    ctx.quadraticCurveTo(-s * 0.1, -s * 0.23, 0, -s * 0.1);
+    ctx.quadraticCurveTo(s * 0.1, -s * 0.23, s * 0.24, -s * 0.25);
+    ctx.quadraticCurveTo(s * 0.21, -s * 0.04, 0, -s * 0.035);
+    ctx.quadraticCurveTo(-s * 0.21, -s * 0.04, -s * 0.24, -s * 0.25);
+    ctx.fill();
+    for (const side of [-1, 1]) {
+      if (react > 0.2 || Math.sin(t * 0.45 + 2) > 0.98) {
+        ctx.strokeStyle = C.eye;
+        ctx.lineWidth = s * 0.02;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(side * s * 0.1, -s * 0.29, s * 0.035, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+      } else {
+        ellipse(side * s * 0.1, -s * 0.3, s * 0.03, s * 0.035, C.eye);
+        circle(side * s * 0.1 + s * 0.008, -s * 0.314, s * 0.012, '#fff');
+      }
+    }
+    ellipse(0, -s * 0.14, s * 0.03, s * 0.022, C.foxDark);
+    ctx.strokeStyle = C.foxDark;
+    ctx.lineWidth = s * 0.012;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.12);
+    ctx.lineTo(0, -s * 0.09);
+    ctx.moveTo(-s * 0.04, -s * 0.09);
+    ctx.quadraticCurveTo(0, -s * 0.065, s * 0.04, -s * 0.09);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ===== Friendly Lion and Tiger =====
+  function drawLionAt(x, y, size, t, enter, react) {
+    drawBigCatAt(x, y, size, t, enter, react, true);
+  }
+
+  function drawTigerAt(x, y, size, t, enter, react) {
+    drawBigCatAt(x, y, size, t, enter, react, false);
+  }
+
+  function drawBigCatAt(x, y, size, t, enter, react, lion) {
+    const s = size;
+    const body = lion ? C.lionBody : C.tigerBody;
+    const light = lion ? C.lionLight : C.tigerLight;
+    const dark = lion ? C.lionMane : C.tigerStripe;
+    ctx.save();
+    ctx.translate(x, y + Math.sin(t * 2.1) * s * 0.015);
+    ctx.rotate(Math.sin(t * 1.7) * 0.025);
+    const scale = easeOutBack(Math.min(1, enter));
+    ctx.scale(scale, scale);
+
+    if (!G.ending) {
+      ctx.globalAlpha = 0.12;
+      ellipse(0, s * 0.34, s * 0.33, s * 0.05, '#000');
+      ctx.globalAlpha = 1;
+    }
+
+    // A soft curling tail, with a tuft or stripes.
+    ctx.save();
+    ctx.translate(s * 0.23, s * 0.13);
+    ctx.rotate(Math.sin(t * 2.8) * 0.2);
+    ctx.strokeStyle = body;
+    ctx.lineWidth = s * 0.075;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(s * 0.31, s * 0.06, s * 0.39, -s * 0.13, s * 0.3, -s * 0.26);
+    ctx.stroke();
+    if (lion) {
+      ellipse(s * 0.3, -s * 0.26, s * 0.065, s * 0.095, dark);
+    } else {
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = s * 0.035;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(s * (0.25 + i * 0.03), -s * (0.02 + i * 0.065));
+        ctx.lineTo(s * (0.32 + i * 0.01), -s * (0.02 + i * 0.065));
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    ellipse(0, s * 0.05, s * 0.27, s * 0.29, body);
+    ellipse(0, s * 0.1, s * 0.16, s * 0.2, light);
+    for (const side of [-1, 1]) {
+      ellipse(side * s * 0.16, s * 0.29, s * 0.115, s * 0.07, body);
+      ellipse(side * s * 0.16, s * 0.3, s * 0.065, s * 0.025, light);
+      ellipse(side * s * 0.23, s * 0.04, s * 0.06, s * 0.15, body);
+    }
+
+    if (lion) {
+      // Scalloped mane shakes when the lion is tapped.
+      ctx.save();
+      ctx.translate(0, -s * 0.27);
+      ctx.rotate(Math.sin(t * 14) * (react || 0) * 0.14);
+      circle(0, 0, s * 0.34, C.lionMane);
+      for (let i = 0; i < 12; i++) {
+        const a = i * Math.PI / 6;
+        circle(Math.cos(a) * s * 0.31, Math.sin(a) * s * 0.31, s * 0.095,
+          i % 2 ? C.lionMane : C.lionManeLight);
+      }
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = s * 0.025;
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.moveTo(side * s * 0.25, s * (0.01 + i * 0.07));
+          ctx.lineTo(side * s * 0.19, s * (0.03 + i * 0.07));
+          ctx.stroke();
+        }
+      }
+    }
+
+    for (const side of [-1, 1]) {
+      circle(side * s * 0.2, -s * 0.48, s * 0.08, lion ? body : dark);
+      circle(side * s * 0.2, -s * 0.48, s * 0.052, light);
+    }
+    ellipse(0, -s * 0.27, s * 0.27, s * 0.25, body);
+    if (!lion) {
+      ctx.fillStyle = dark;
+      for (const dx of [-0.12, 0, 0.12]) {
+        ctx.beginPath();
+        ctx.moveTo(s * (dx - 0.028), -s * 0.49);
+        ctx.lineTo(s * (dx + 0.028), -s * 0.49);
+        ctx.lineTo(s * dx, -s * (dx === 0 ? 0.36 : 0.4));
+        ctx.fill();
+      }
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = s * 0.028;
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 2; i++) {
+          ctx.beginPath();
+          ctx.moveTo(side * s * 0.245, -s * (0.24 - i * 0.065));
+          ctx.lineTo(side * s * 0.18, -s * (0.21 - i * 0.065));
+          ctx.stroke();
+        }
+      }
+    }
+
+    const happyEyes = react > 0.2 || Math.sin(t * 0.5 + (lion ? 1 : 3)) > 0.98;
+    for (const side of [-1, 1]) {
+      if (happyEyes) {
+        ctx.strokeStyle = C.eye;
+        ctx.lineWidth = s * 0.022;
+        ctx.beginPath();
+        ctx.arc(side * s * 0.1, -s * 0.28, s * 0.038, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+      } else {
+        ellipse(side * s * 0.1, -s * 0.29, s * 0.035, s * 0.04, C.eye);
+        circle(side * s * 0.1 + s * 0.01, -s * 0.305, s * 0.013, '#fff');
+      }
+      ellipse(side * s * 0.055, -s * 0.15, s * 0.08, s * 0.06, light);
+    }
+    ellipse(0, -s * 0.18, s * 0.035, s * 0.025, dark);
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = s * 0.015;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.16);
+    ctx.lineTo(0, -s * 0.12);
+    ctx.moveTo(-s * 0.055, -s * 0.12);
+    ctx.quadraticCurveTo(0, -s * 0.075, s * 0.055, -s * 0.12);
+    ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    circle(-s * 0.18, -s * 0.17, s * 0.035, '#e88478');
+    circle(s * 0.18, -s * 0.17, s * 0.035, '#e88478');
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   // ===== Draw Cucumber =====
@@ -1787,36 +2012,49 @@
   }
 
   // ===== Collectible Carrots =====
-  function spawnCarrot() {
-    if (G.ending) return;
-    const w = canvas.width, h = canvas.height;
-    const size = Math.min(w, h) * 0.09;
-    const margin = size * 1.2;
+  function veggieHitRadius(size) { return Math.max(28, size * 1.55); }
 
-    let x, y, ok = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      x = margin + Math.random() * (w - margin * 2);
-      y = margin + Math.random() * (G.groundY - margin * 2.5);
-      const distR = Math.hypot(x - G.rabbit.x, y - G.rabbit.y);
-      const distT = G.turtle.visible ? Math.hypot(x - G.turtle.x, y - G.turtle.y) : 999;
-      const distS = G.squid.visible ? Math.hypot(x - G.squid.x, y - G.squid.y) : 999;
-      const distC = G.cat.visible ? Math.hypot(x - G.cat.x, y - G.cat.y) : 999;
-      const distD = G.duck.visible ? Math.hypot(x - G.duck.x, y - G.duck.y) : 999;
-      const distCh = G.chick.visible ? Math.hypot(x - G.chick.x, y - G.chick.y) : 999;
-      const distP = G.penguin.visible ? Math.hypot(x - G.penguin.x, y - G.penguin.y) : 999;
-      const distM = Math.hypot(x - G.moonX, y - G.moonY);
-      if (distR > size * 2.5 && distT > size * 2 && distS > size * 2 && distC > size * 2 && distD > size * 2 && distCh > size * 2 && distP > size * 2 && distM > G.moonR + size * 1.5) {
-        ok = true;
-        break;
+  function veggieSpotFree(x, y, size, ignore) {
+    const radius = veggieHitRadius(size);
+    if (x < radius + 8 || x > canvas.width - radius - 8 || y < Math.max(84, radius + 8) || y > G.groundY - radius) return false;
+    if (Math.hypot(x - G.moonX, y - G.moonY) < G.moonR + radius + 8) return false;
+    if (Math.hypot(x - G.rabbit.x, y - G.rabbit.y) < radius + G.rabbit.size) return false;
+    for (const name of CHARACTER_NAMES) {
+      const ch = G[name];
+      if (!ch.visible) continue;
+      // Reserve the destination while a friend is entering, as well as its current position.
+      for (const position of [ch, { x: ch.targetX, y: ch.targetY }]) {
+        if (Math.hypot(x - position.x, y - position.y) < radius + ch.size * 0.95) return false;
       }
     }
-    if (!ok) {
-      x = margin + Math.random() * (w - margin * 2);
-      y = margin * 1.5;
-    }
+    return G.carrots.every(c => c === ignore || Math.hypot(x - c.x, y - c.y) > radius + veggieHitRadius(c.size) + 8) &&
+      G.flyingCarrots.every(c => Math.hypot(x - c.sx, y - c.sy) > radius + veggieHitRadius(c.size) + 8);
+  }
 
-    const veggieType = Math.random() < 0.5 ? 'cucumber' : 'carrot';
-    G.carrots.push({ x, y, size, scale: 0, wobble: Math.random() * Math.PI * 2, type: veggieType });
+  function spawnCarrot() {
+    if (G.ending || G.endingPending || G.carrots.length >= 3 || G.score + G.flyingCarrots.length >= CARROT_GOAL) return;
+    const size = Math.min(canvas.width, canvas.height) * 0.09;
+    const margin = veggieHitRadius(size) + 8;
+    const minY = Math.max(84, margin);
+    const maxY = G.groundY - veggieHitRadius(size);
+    let spot = null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const x = margin + Math.random() * (canvas.width - margin * 2);
+      const y = minY + Math.random() * Math.max(0, maxY - minY);
+      if (veggieSpotFree(x, y, size)) { spot = { x, y }; break; }
+    }
+    // Never fall back to a position that overlaps a friend or another vegetable.
+    if (!spot) {
+      const spacing = margin * 2;
+      for (let y = minY; y <= maxY && !spot; y += spacing) {
+        for (let x = margin; x <= canvas.width - margin && !spot; x += spacing) {
+          if (veggieSpotFree(x, y, size)) spot = { x, y };
+        }
+      }
+    }
+    if (!spot) { G.lastCarrotTime = performance.now(); return; }
+    const type = Math.random() < 0.5 ? 'cucumber' : 'carrot';
+    G.carrots.push({ ...spot, size, scale: 0, wobble: Math.random() * Math.PI * 2, type });
   }
 
   // ===== Flying Carrot Animation =====
@@ -1903,77 +2141,57 @@
     ctx.font = `${fontSize}px -apple-system, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('한번 더!', w / 2, h * 0.65);
+    ctx.fillText('한번 더!', w / 2, h * 0.9);
     ctx.globalAlpha = 1;
   }
 
   // ===== Fly to Moon Logic =====
   function startFlyToMoon() {
+    if (G.ending) return;
     G.ending = true;
+    G.endingPending = false;
     G.endingTime = 0;
     G.endingPhase = 'flying';
     G.carrots = [];
     G.flyingCarrots = [];
-
-    G.flightRabbit = { x: G.rabbit.x, y: G.rabbit.y, startX: G.rabbit.x, startY: G.rabbit.y };
-    G.flightTurtle = { x: G.turtle.x, y: G.turtle.y, startX: G.turtle.x, startY: G.turtle.y };
-    G.flightSquid = { x: G.squid.x, y: G.squid.y, startX: G.squid.x, startY: G.squid.y };
-    G.flightCat = { x: G.cat.x, y: G.cat.y, startX: G.cat.x, startY: G.cat.y };
-    G.flightDuck = { x: G.duck.x, y: G.duck.y, startX: G.duck.x, startY: G.duck.y };
-    G.flightChick = { x: G.chick.x, y: G.chick.y, startX: G.chick.x, startY: G.chick.y };
-    G.flightPenguin = { x: G.penguin.x, y: G.penguin.y, startX: G.penguin.x, startY: G.penguin.y };
+    G.spawnTimes = [];
+    ['rabbit', ...CHARACTER_NAMES].forEach(name => {
+      const ch = G[name];
+      if (name !== 'rabbit') {
+        ch.x = ch.targetX;
+        ch.y = ch.targetY;
+        ch.enter = 1;
+        ch.react = 0;
+      }
+      G[flightKey(name)] = { x: ch.x, y: ch.y, startX: ch.x, startY: ch.y };
+      clampFlight(name, G[flightKey(name)]);
+    });
     G.rabbit.happy = 10;
     G.rabbit.bounce = 0;
-
     playFlyToMoonSong();
   }
 
   function updateEnding(dt, now) {
     G.endingTime += dt;
     const type = G.endingType || 'arc';
+    const { moonX, moonY } = G.endingLayout;
+    const moonR = G.moonR;
 
     if (G.endingPhase === 'flying') {
       const duration = type === 'float' ? 5 : 4;
       const p = easeInOutCubic(Math.min(1, G.endingTime / duration));
 
-      // Landing spots spread below moon so enlarged moon (1.6x) doesn't cover anyone
-      const targetTX = G.moonX - G.moonR * 2.6;
-      const targetTY = G.moonY + G.moonR * 1.7;
-      const targetDX = G.moonX - G.moonR * 1.9;
-      const targetDY = G.moonY + G.moonR * 2.3;
-      const targetPX = G.moonX - G.moonR * 1.1;
-      const targetPY = G.moonY + G.moonR * 1.8;
-      const targetRX = G.moonX - G.moonR * 0.3;
-      const targetRY = G.moonY + G.moonR * 2.2;
-      const targetChX = G.moonX + G.moonR * 0.5;
-      const targetChY = G.moonY + G.moonR * 1.7;
-      const targetCX = G.moonX + G.moonR * 1.0;
-      const targetCY = G.moonY + G.moonR * 2.3;
-      const targetSX = G.moonX + G.moonR * 0.2;
-      const targetSY = G.moonY - G.moonR * 2.0;
-      const arcH = canvas.height * 0.3;
-
-      // Each character gets a unique offset so they don't move in sync
-      const rp = flightPos(G.flightRabbit.startX, G.flightRabbit.startY, targetRX, targetRY, p, arcH, type, 0);
-      G.flightRabbit.x = rp.x; G.flightRabbit.y = rp.y;
-
-      const tp = flightPos(G.flightTurtle.startX, G.flightTurtle.startY, targetTX, targetTY, p, arcH * 0.8, type, 1.2);
-      G.flightTurtle.x = tp.x; G.flightTurtle.y = tp.y;
-
-      const sp = flightPos(G.flightSquid.startX, G.flightSquid.startY, targetSX, targetSY, p, arcH * 1.1, type, 2.4);
-      G.flightSquid.x = sp.x; G.flightSquid.y = sp.y;
-
-      const cp = flightPos(G.flightCat.startX, G.flightCat.startY, targetCX, targetCY, p, arcH * 0.9, type, 3.6);
-      G.flightCat.x = cp.x; G.flightCat.y = cp.y;
-
-      const dp = flightPos(G.flightDuck.startX, G.flightDuck.startY, targetDX, targetDY, p, arcH, type, 4.8);
-      G.flightDuck.x = dp.x; G.flightDuck.y = dp.y;
-
-      const chp = flightPos(G.flightChick.startX, G.flightChick.startY, targetChX, targetChY, p, arcH * 0.85, type, 6.0);
-      G.flightChick.x = chp.x; G.flightChick.y = chp.y;
-
-      const pp = flightPos(G.flightPenguin.startX, G.flightPenguin.startY, targetPX, targetPY, p, arcH * 0.95, type, 7.2);
-      G.flightPenguin.x = pp.x; G.flightPenguin.y = pp.y;
+      const arcH = canvas.height * 0.25;
+      ['rabbit', ...CHARACTER_NAMES].forEach((name, i) => {
+        if (name !== 'rabbit' && !G[name].visible) return;
+        const flight = G[flightKey(name)];
+        const target = G.endingLayout.targets[name];
+        const pos = flightPos(flight.startX, flight.startY, target.x, target.y, p,
+          arcH * (0.85 + (i % 3) * 0.08), type, i * 1.2);
+        flight.x = pos.x;
+        flight.y = pos.y;
+        clampFlight(name, flight);
+      });
 
       // Trail particles - style varies per ending type
       const trailType = (type === 'float' || type === 'spiral') ? 'heart' : 'star';
@@ -1987,13 +2205,11 @@
             life: 0.8, decay: 0.02, size: 3 + Math.random() * 4, type: pt });
         }
       }
-      trail(G.flightRabbit.x, G.flightRabbit.y, G.rabbit.size, 0.5, trailType);
-      if (G.turtle.visible) trail(G.flightTurtle.x, G.flightTurtle.y, G.turtle.size, 0.4, trailAlt);
-      if (G.squid.visible) trail(G.flightSquid.x, G.flightSquid.y, G.squid.size, 0.4, trailType);
-      if (G.cat.visible) trail(G.flightCat.x, G.flightCat.y, G.cat.size, 0.4, trailAlt);
-      if (G.duck.visible) trail(G.flightDuck.x, G.flightDuck.y, G.duck.size, 0.4, trailType);
-      if (G.chick.visible) trail(G.flightChick.x, G.flightChick.y, G.chick.size, 0.4, trailAlt);
-      if (G.penguin.visible) trail(G.flightPenguin.x, G.flightPenguin.y, G.penguin.size, 0.4, trailType);
+      ['rabbit', ...CHARACTER_NAMES].forEach((name, i) => {
+        if (name !== 'rabbit' && !G[name].visible) return;
+        const f = G[flightKey(name)];
+        trail(f.x, f.y, G[name].size, 0.4, i % 2 ? trailAlt : trailType);
+      });
 
       G.rabbit.happy = 10;
 
@@ -2005,29 +2221,29 @@
           // ring explosion outward
           for (let i = 0; i < 30; i++) {
             const a = (Math.PI * 2 * i) / 30;
-            G.particles.push({ x: G.moonX, y: G.moonY,
+            G.particles.push({ x: moonX, y: moonY,
               vx: Math.cos(a) * 5, vy: Math.sin(a) * 5,
               life: 1, decay: 0.015, size: 5 + Math.random() * 4, type: i % 2 === 0 ? 'star' : 'heart' });
           }
         } else if (type === 'bounce') {
           // upward pop fountain
           for (let i = 0; i < 40; i++) {
-            G.particles.push({ x: G.moonX + (Math.random() - 0.5) * G.moonR * 2, y: G.moonY,
+            G.particles.push({ x: moonX + (Math.random() - 0.5) * moonR * 2, y: moonY,
               vx: (Math.random() - 0.5) * 3, vy: -3 - Math.random() * 5,
               life: 1, decay: 0.012, size: 4 + Math.random() * 5, type: 'heart' });
           }
         } else if (type === 'float') {
           // gentle shower from above
           for (let i = 0; i < 35; i++) {
-            G.particles.push({ x: G.moonX + (Math.random() - 0.5) * G.moonR * 4,
-              y: G.moonY - G.moonR * 2 - Math.random() * G.moonR,
+            G.particles.push({ x: moonX + (Math.random() - 0.5) * moonR * 4,
+              y: moonY - moonR * 2 - Math.random() * moonR,
               vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2,
               life: 1, decay: 0.01, size: 4 + Math.random() * 4, type: i % 3 === 0 ? 'star' : 'heart' });
           }
         } else {
           // arc: classic burst
-          spawnParticles(G.moonX, G.moonY, 25, 'heart');
-          spawnParticles(G.moonX, G.moonY, 25, 'star');
+          spawnParticles(moonX, moonY, 25, 'heart');
+          spawnParticles(moonX, moonY, 25, 'star');
         }
       }
     }
@@ -2041,8 +2257,8 @@
         // Particles spiral outward continuously
         if (Math.random() < 0.4) {
           const a = G.endingTime * 4 + Math.random() * Math.PI;
-          const r = G.moonR * (0.5 + Math.random());
-          G.particles.push({ x: G.moonX + Math.cos(a) * r, y: G.moonY + Math.sin(a) * r,
+          const r = moonR * (0.5 + Math.random());
+          G.particles.push({ x: moonX + Math.cos(a) * r, y: moonY + Math.sin(a) * r,
             vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
             life: 0.8, decay: 0.02, size: 4 + Math.random() * 4, type: Math.random() < 0.5 ? 'star' : 'heart' });
         }
@@ -2050,8 +2266,8 @@
         // Particles pop up repeatedly like popcorn
         if (Math.sin(G.endingTime * 6) > 0.5 && Math.random() < 0.6) {
           G.particles.push({
-            x: G.moonX + (Math.random() - 0.5) * G.moonR * 3,
-            y: G.moonY + G.moonR,
+            x: moonX + (Math.random() - 0.5) * moonR * 3,
+            y: moonY + moonR,
             vx: (Math.random() - 0.5) * 2, vy: -4 - Math.random() * 4,
             life: 0.9, decay: 0.02, size: 4 + Math.random() * 5, type: 'heart' });
         }
@@ -2059,8 +2275,8 @@
         // Gentle hearts/stars drift down like snow
         if (Math.random() < 0.35) {
           G.particles.push({
-            x: G.moonX + (Math.random() - 0.5) * G.moonR * 5,
-            y: G.moonY - G.moonR * 2,
+            x: moonX + (Math.random() - 0.5) * moonR * 5,
+            y: moonY - moonR * 2,
             vx: (Math.random() - 0.5) * 1, vy: 0.5 + Math.random() * 1.5,
             life: 1, decay: 0.01, size: 3 + Math.random() * 4, type: Math.random() < 0.6 ? 'heart' : 'star' });
         }
@@ -2068,8 +2284,8 @@
         // arc: random bursts
         if (Math.sin(G.endingTime * 3) > 0.7 && Math.random() < 0.5) {
           spawnParticles(
-            G.moonX + (Math.random() - 0.5) * G.moonR * 3,
-            G.moonY + (Math.random() - 0.5) * G.moonR * 2,
+            moonX + (Math.random() - 0.5) * moonR * 3,
+            moonY + (Math.random() - 0.5) * moonR * 2,
             5, Math.random() < 0.5 ? 'heart' : 'star'
           );
         }
@@ -2085,29 +2301,27 @@
   function resetGame() {
     G.score = 0;
     G.ending = false;
+    G.endingPending = false;
+    G.endingStartAt = 0;
     G.endingTime = 0;
     G.endingPhase = '';
     G.endingType = null;
     G.carrots = [];
     G.flyingCarrots = [];
+    G.spawnTimes = [];
     G.particles = [];
     G.celebrating = 0;
+    G.dimming = 0;
     shuffleCharacterOrder();
     G.rabbit.bounce = 0;
     G.rabbit.happy = 0;
     G.rabbit.eating = 0;
-    G.turtle.visible = false;
-    G.turtle.enter = 0;
-    G.squid.visible = false;
-    G.squid.enter = 0;
-    G.cat.visible = false;
-    G.cat.enter = 0;
-    G.duck.visible = false;
-    G.duck.enter = 0;
-    G.chick.visible = false;
-    G.chick.enter = 0;
-    G.penguin.visible = false;
-    G.penguin.enter = 0;
+    CHARACTER_NAMES.forEach(name => {
+      G[name].visible = false;
+      G[name].enter = 0;
+      G[name].react = 0;
+      G[flightKey(name)] = { x: 0, y: 0 };
+    });
     layout();
     G.lastCarrotTime = performance.now();
     spawnCarrot();
@@ -2115,6 +2329,7 @@
 
   // ===== Game Logic =====
   function onCarrotEaten() {
+    if (G.ending || G.endingPending || G.score >= CARROT_GOAL) return;
     const r = G.rabbit;
     r.eating = 1;
     r.happy = 3;
@@ -2123,20 +2338,16 @@
     playMunch();
     spawnParticles(r.x, r.y - r.size * 0.3, 8, 'heart');
 
-    // Spawn characters every 2 carrots in random order
-    for (let i = 0; i < G.characterOrder.length; i++) {
-      const threshold = (i + 1) * 2; // 2, 4, 6, 8, 10, 12
-      const name = G.characterOrder[i];
-      if (G.score === threshold && !G[name].visible) {
-        spawnCharacterByName(name);
-      }
-    }
-
-    if (G.score === 14) {
+    G.characterOrder.forEach((name, i) => {
+      if (G.score >= FRIEND_THRESHOLDS[i] && !G[name].visible) spawnCharacterByName(name);
+    });
+    if (G.score === CARROT_GOAL) {
       G.endingType = ENDING_TYPES[Math.floor(Math.random() * ENDING_TYPES.length)];
-      setTimeout(() => startFlyToMoon(), 800);
+      G.endingPending = true;
+      G.endingStartAt = performance.now() + 800;
+      G.carrots = [];
+      G.spawnTimes = [];
     }
-
     G.lastCarrotTime = performance.now();
   }
 
@@ -2155,14 +2366,14 @@
       return;
     }
 
-    if (G.ending) return;
+    if (G.ending || G.endingPending) return;
 
     // Check carrot hits FIRST (fixes clicks near moon)
     for (let i = G.carrots.length - 1; i >= 0; i--) {
       const c = G.carrots[i];
-      if (c.scale < 0.5) continue;
+      if (c.scale < 0.35) continue;
       const dist = Math.hypot(px - c.x, py - c.y);
-      if (dist < c.size * 1.3) {
+      if (dist < veggieHitRadius(c.size) && G.score + G.flyingCarrots.length < CARROT_GOAL) {
         playPop();
         playSparkle();
         spawnParticles(c.x, c.y, 6, 'star');
@@ -2190,56 +2401,14 @@
       return;
     }
 
-    if (G.turtle.visible) {
-      const tr = G.turtle;
-      if (Math.hypot(px - tr.x, py - tr.y) < tr.size * 0.5) {
-        playSparkle();
-        spawnParticles(tr.x, tr.y - tr.size * 0.2, 5, 'star');
-        return;
-      }
-    }
-
-    if (G.squid.visible) {
-      const sq = G.squid;
-      if (Math.hypot(px - sq.x, py - sq.y) < sq.size * 0.5) {
-        playSparkle();
-        spawnParticles(sq.x, sq.y - sq.size * 0.2, 5, 'heart');
-        return;
-      }
-    }
-
-    if (G.cat.visible) {
-      const ct = G.cat;
-      if (Math.hypot(px - ct.x, py - ct.y) < ct.size * 0.5) {
-        playSparkle();
-        spawnParticles(ct.x, ct.y - ct.size * 0.2, 5, 'heart');
-        return;
-      }
-    }
-
-    if (G.duck.visible) {
-      const dk = G.duck;
-      if (Math.hypot(px - dk.x, py - dk.y) < dk.size * 0.5) {
-        playSparkle();
-        spawnParticles(dk.x, dk.y - dk.size * 0.2, 5, 'star');
-        return;
-      }
-    }
-
-    if (G.chick.visible) {
-      const ck = G.chick;
-      if (Math.hypot(px - ck.x, py - ck.y) < ck.size * 0.5) {
-        playSparkle();
-        spawnParticles(ck.x, ck.y - ck.size * 0.2, 5, 'heart');
-        return;
-      }
-    }
-
-    if (G.penguin.visible) {
-      const pg = G.penguin;
-      if (Math.hypot(px - pg.x, py - pg.y) < pg.size * 0.5) {
-        playSparkle();
-        spawnParticles(pg.x, pg.y - pg.size * 0.2, 5, 'star');
+    for (const name of CHARACTER_NAMES) {
+      const ch = G[name];
+      if (!ch.visible || ch.enter < 0.5) continue;
+      if (Math.hypot(px - ch.x, py - ch.y) < Math.max(24, ch.size * 0.65)) {
+        ch.react = 1;
+        if (name === 'lion') playLionRoar();
+        else playSparkle();
+        spawnParticles(ch.x, ch.y - ch.size * 0.2, 7, CHARACTER_SPEC[name].particle);
         return;
       }
     }
@@ -2282,35 +2451,23 @@
     if (r.happy > 0) r.happy = Math.max(0, r.happy - dt * 1.5);
     if (r.eating > 0) r.eating = Math.max(0, r.eating - dt * 2.5);
 
-    if (G.turtle.visible) {
-      if (G.turtle.enter < 1) G.turtle.enter += dt * 1.2;
-      G.turtle.x += (G.turtle.targetX - G.turtle.x) * Math.min(1, dt * 1.5);
+    CHARACTER_NAMES.forEach(name => {
+      const ch = G[name];
+      if (!ch.visible) return;
+      ch.enter = Math.min(1, ch.enter + dt * 1.5);
+      const speed = CHARACTER_SPEC[name].from === 'top' ? 3 : 2.2;
+      ch.x += (ch.targetX - ch.x) * Math.min(1, dt * speed);
+      ch.y += (ch.targetY - ch.y) * Math.min(1, dt * speed);
+      ch.react = Math.max(0, ch.react - dt * 1.8);
+    });
+    if (G.endingPending) {
+      if (now >= G.endingStartAt) startFlyToMoon();
+      updateParticles();
+      return;
     }
-
-    if (G.squid.visible) {
-      if (G.squid.enter < 1) G.squid.enter += dt * 1.2;
-      G.squid.y += (G.squid.targetY - G.squid.y) * Math.min(1, dt * 3);
-    }
-
-    if (G.cat.visible) {
-      if (G.cat.enter < 1) G.cat.enter += dt * 1.2;
-      G.cat.x += (G.cat.targetX - G.cat.x) * Math.min(1, dt * 1.5);
-    }
-
-    if (G.duck.visible) {
-      if (G.duck.enter < 1) G.duck.enter += dt * 1.2;
-      G.duck.x += (G.duck.targetX - G.duck.x) * Math.min(1, dt * 1.5);
-    }
-
-    if (G.chick.visible) {
-      if (G.chick.enter < 1) G.chick.enter += dt * 1.2;
-      G.chick.x += (G.chick.targetX - G.chick.x) * Math.min(1, dt * 1.5);
-    }
-
-    if (G.penguin.visible) {
-      if (G.penguin.enter < 1) G.penguin.enter += dt * 1.2;
-      G.penguin.x += (G.penguin.targetX - G.penguin.x) * Math.min(1, dt * 1.5);
-    }
+    const scheduled = G.spawnTimes.filter(time => time <= now);
+    G.spawnTimes = G.spawnTimes.filter(time => time > now);
+    scheduled.forEach(() => spawnCarrot());
 
     if (G.celebrating > 0) {
       G.celebrating -= dt;
@@ -2322,10 +2479,10 @@
       if (now - G.lastCarrotTime > G.carrotDelay) {
         spawnCarrot();
         if (G.score > 2 && Math.random() < 0.4) {
-          setTimeout(spawnCarrot, 200);
+          G.spawnTimes.push(now + 200);
         }
         if (G.score > 6 && Math.random() < 0.3) {
-          setTimeout(spawnCarrot, 400);
+          G.spawnTimes.push(now + 400);
         }
       }
     }
@@ -2355,13 +2512,7 @@
     }
 
     if (G.ending) {
-      drawTurtle(t);
-      drawDuck(t);
-      drawPenguin(t);
-      drawChick(t);
-      drawRabbit(t);
-      drawCat(t);
-      drawSquid(t);
+      drawCharacters(t);
       drawParticles();
       drawScore();
       drawEndingText(t);
@@ -2382,13 +2533,7 @@
       ctx.restore();
     });
 
-    drawTurtle(t);
-    drawDuck(t);
-    drawPenguin(t);
-    drawChick(t);
-    drawRabbit(t);
-    drawCat(t);
-    drawSquid(t);
+    drawCharacters(t);
     drawFlyingCarrots();
     drawParticles();
     drawScore();
