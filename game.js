@@ -70,6 +70,12 @@
     foxBody: '#d98148',
     foxLight: '#fff0d8',
     foxDark: '#975238',
+    sunBearBody: '#40312d',
+    sunBearLight: '#58413a',
+    sunBearDark: '#281f20',
+    sunBearMuzzle: '#d9ae79',
+    sunBearChest: '#f3cc88',
+    sunBearTongue: '#f1849d',
     eye: '#1a1a2e',
     carrotBody: '#e8863a',
     carrotTop: '#4a8a5a',
@@ -293,10 +299,11 @@
     fox:     { size: 0.95, x: 0.5,  row: 0, from: 'right', draw: drawFoxAt,     particle: 'heart' },
     lion:    { size: 1.05, x: 0.69, row: 0, from: 'right', draw: drawLionAt,    particle: 'heart' },
     squid:   { size: 0.8,  x: 0.88, row: 0, from: 'top',   draw: drawSquidAt,   particle: 'heart', yOffset: -0.7 },
-    duck:    { size: 0.85, x: 0.13, row: 1, from: 'left',  draw: drawDuckAt,    particle: 'star' },
-    tiger:   { size: 0.95, x: 0.33, row: 1, from: 'left',  draw: drawTigerAt,   particle: 'star' },
+    duck:    { size: 0.85, x: 0.1,  row: 1, from: 'left',  draw: drawDuckAt,    particle: 'star' },
+    tiger:   { size: 0.95, x: 0.26, row: 1, from: 'left',  draw: drawTigerAt,   particle: 'star' },
+    sunBear: { size: 0.95, x: 0.42, row: 1, from: 'left',  draw: drawSunBearAt, particle: 'heart' },
     chick:   { size: 0.7,  x: 0.75, row: 1, from: 'right', draw: drawChickAt,   particle: 'heart' },
-    cat:     { size: 0.9,  x: 0.9,  row: 1, from: 'right', draw: drawCatAt,     particle: 'heart' },
+    cat:     { size: 0.9,  x: 0.91, row: 1, from: 'right', draw: drawCatAt,     particle: 'heart' },
   };
   const CHARACTER_NAMES = Object.keys(CHARACTER_SPEC);
   const CARROT_GOAL = 14;
@@ -384,7 +391,7 @@
 
     const s = Math.min(w, h) * 0.13;
     G.rabbit.size = s;
-    G.rabbit.x = w * 0.56;
+    G.rabbit.x = w * 0.58;
     G.rabbit.y = h * 0.87 - s * 0.15;
     CHARACTER_NAMES.forEach(name => {
       const ch = G[name], spec = CHARACTER_SPEC[name];
@@ -402,7 +409,7 @@
     const moonY = Math.max(G.moonR * 1.6 + 16, h * 0.22);
     const backY = Math.max(h * 0.52, moonY + G.moonR * 1.6 + s * 0.7);
     const frontY = Math.max(h * 0.76, backY + s * 1.55);
-    const targets = { rabbit: { x: w * 0.56, y: frontY } };
+    const targets = { rabbit: { x: w * 0.58, y: frontY } };
     CHARACTER_NAMES.forEach(name => {
       const spec = CHARACTER_SPEC[name];
       targets[name] = { x: w * spec.x, y: spec.row === 0 ? backY : frontY };
@@ -1633,6 +1640,83 @@
     circle(s * 0.2, -s * 0.12, s * 0.04, '#e88080');
     ctx.globalAlpha = 1;
 
+    ctx.restore();
+  }
+
+  // ===== Sun Bear, Always Showing Its Tongue =====
+  function drawSunBearAt(x, y, size, t, enter, react) {
+    const s = size;
+    const happy = react || 0;
+    ctx.save();
+    ctx.translate(x, y + Math.sin(t * 2) * s * 0.015);
+    ctx.rotate(Math.sin(t * 1.6) * 0.035 + Math.sin(t * 9) * happy * 0.055);
+    const scale = easeOutBack(Math.min(1, enter));
+    ctx.scale(scale, scale);
+
+    if (!G.ending) {
+      ctx.globalAlpha = 0.12;
+      ellipse(0, s * 0.35, s * 0.31, s * 0.05, '#000');
+      ctx.globalAlpha = 1;
+    }
+    circle(s * 0.24, s * 0.17, s * 0.065, C.sunBearDark);
+    ellipse(0, s * 0.045, s * 0.28, s * 0.3, C.sunBearBody);
+    ellipse(0, s * 0.07, s * 0.2, s * 0.24, C.sunBearLight);
+    for (const side of [-1, 1]) {
+      ellipse(side * s * 0.25, s * 0.04, s * 0.075, s * 0.17, C.sunBearBody);
+      ellipse(side * s * 0.16, s * 0.3, s * 0.12, s * 0.065, C.sunBearDark);
+      for (let i = -1; i <= 1; i++) {
+        ellipse(side * s * 0.16 + i * s * 0.035, s * 0.32, s * 0.009, s * 0.016, C.sunBearMuzzle);
+      }
+    }
+
+    // Warm crescent on the chest, visible around the long pink tongue.
+    ctx.fillStyle = C.sunBearChest;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.18, 0);
+    ctx.quadraticCurveTo(0, s * 0.1, s * 0.18, 0);
+    ctx.quadraticCurveTo(s * 0.14, s * 0.14, 0, s * 0.19);
+    ctx.quadraticCurveTo(-s * 0.14, s * 0.14, -s * 0.18, 0);
+    ctx.fill();
+
+    for (const side of [-1, 1]) {
+      circle(side * s * 0.22, -s * 0.5, s * 0.09, C.sunBearBody);
+      circle(side * s * 0.22, -s * 0.5, s * 0.052, C.sunBearMuzzle);
+    }
+    ellipse(0, -s * 0.28, s * 0.285, s * 0.27, C.sunBearBody);
+    ellipse(-s * 0.06, -s * 0.36, s * 0.18, s * 0.14, C.sunBearLight);
+    for (const side of [-1, 1]) {
+      if (happy > 0.2 || Math.sin(t * 0.45 + 4) > 0.98) {
+        ctx.strokeStyle = C.sunBearChest;
+        ctx.lineWidth = Math.max(1, s * 0.02);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(side * s * 0.11, -s * 0.29, s * 0.035, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+      } else {
+        circle(side * s * 0.11, -s * 0.3, s * 0.043, C.sunBearDark);
+        circle(side * s * 0.11 + s * 0.01, -s * 0.315, s * 0.015, '#fff');
+      }
+    }
+    ellipse(0, -s * 0.15, s * 0.17, s * 0.12, C.sunBearMuzzle);
+    ellipse(0, -s * 0.22, s * 0.065, s * 0.042, C.sunBearDark);
+    ellipse(0, -s * 0.1, s * 0.075, s * 0.055, C.sunBearDark);
+
+    // Keep the tongue out even while idle; a tap adds a playful wiggle.
+    const tongueEnd = s * (0.13 + Math.sin(t * 2.7) * 0.012 + happy * 0.08);
+    const tongueSway = Math.sin(t * (happy > 0 ? 12 : 2.7)) * s * (0.008 + happy * 0.035);
+    ctx.fillStyle = C.sunBearTongue;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.045, -s * 0.105);
+    ctx.bezierCurveTo(-s * 0.05, 0, tongueSway - s * 0.065, tongueEnd, tongueSway, tongueEnd);
+    ctx.bezierCurveTo(tongueSway + s * 0.065, tongueEnd, s * 0.05, 0, s * 0.045, -s * 0.105);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#d56a87';
+    ctx.lineWidth = Math.max(0.6, s * 0.012);
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.07);
+    ctx.quadraticCurveTo(tongueSway, s * 0.02, tongueSway, tongueEnd - s * 0.035);
+    ctx.stroke();
     ctx.restore();
   }
 
