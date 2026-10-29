@@ -76,6 +76,14 @@
     sunBearMuzzle: '#d9ae79',
     sunBearChest: '#f3cc88',
     sunBearTongue: '#f1849d',
+    brownBearBody: '#996840',
+    brownBearLight: '#bc8a59',
+    brownBearDark: '#67462f',
+    brownBearMuzzle: '#ebca9c',
+    leopardCatBody: '#bda47d',
+    leopardCatLight: '#f7e9ce',
+    leopardCatDark: '#66503d',
+    leopardCatSpot: '#795a3e',
     eye: '#1a1a2e',
     carrotBody: '#e8863a',
     carrotTop: '#4a8a5a',
@@ -294,10 +302,12 @@
 
   // One list drives spawning, layout, drawing, touch feedback and ending flights.
   const CHARACTER_SPEC = {
-    turtle:  { size: 1.1,  x: 0.13, row: 0, from: 'left',  draw: drawTurtleAt,  particle: 'star' },
-    penguin: { size: 0.95, x: 0.31, row: 0, from: 'left',  draw: drawPenguinAt, particle: 'star' },
-    fox:     { size: 0.95, x: 0.5,  row: 0, from: 'right', draw: drawFoxAt,     particle: 'heart' },
-    lion:    { size: 1.05, x: 0.69, row: 0, from: 'right', draw: drawLionAt,    particle: 'heart' },
+    turtle:  { size: 1.1,  x: 0.12, row: 0, from: 'left',  draw: drawTurtleAt,  particle: 'star' },
+    penguin: { size: 0.95, x: 0.247,row: 0, from: 'left',  draw: drawPenguinAt, particle: 'star' },
+    fox:     { size: 0.95, x: 0.374,row: 0, from: 'right', draw: drawFoxAt,     particle: 'heart' },
+    brownBear: { size: 1.05, x: 0.5, row: 0, from: 'left', draw: drawBrownBearAt, particle: 'heart' },
+    lion:    { size: 1.05, x: 0.626,row: 0, from: 'right', draw: drawLionAt,    particle: 'heart' },
+    leopardCat: { size: 0.95, x: 0.753, row: 0, from: 'right', draw: drawLeopardCatAt, particle: 'star' },
     squid:   { size: 0.8,  x: 0.88, row: 0, from: 'top',   draw: drawSquidAt,   particle: 'heart', yOffset: -0.7 },
     duck:    { size: 0.85, x: 0.1,  row: 1, from: 'left',  draw: drawDuckAt,    particle: 'star' },
     tiger:   { size: 0.95, x: 0.26, row: 1, from: 'left',  draw: drawTigerAt,   particle: 'star' },
@@ -384,20 +394,25 @@
   // ===== Layout =====
   function layout() {
     const w = canvas.width, h = canvas.height;
-    G.groundY = h * 0.7;
     G.moonR = Math.min(w, h) * 0.13;
     G.moonX = w * 0.8;
     G.moonY = Math.max(h * 0.16, G.moonR + 16);
 
-    const s = Math.min(w, h) * 0.13;
+    const maxRowCount = Math.max(
+      CHARACTER_NAMES.filter(name => CHARACTER_SPEC[name].row === 0).length,
+      CHARACTER_NAMES.filter(name => CHARACTER_SPEC[name].row === 1).length + 1);
+    const s = Math.min(w, h) * Math.min(0.13, 0.8 / maxRowCount);
+    const normalFrontY = h * 0.87;
+    const normalBackY = Math.min(h * 0.75, normalFrontY - s * 2.2);
+    G.groundY = Math.min(h * 0.7, normalBackY - s * 0.1);
     G.rabbit.size = s;
     G.rabbit.x = w * 0.58;
-    G.rabbit.y = h * 0.87 - s * 0.15;
+    G.rabbit.y = normalFrontY - s * 0.15;
     CHARACTER_NAMES.forEach(name => {
       const ch = G[name], spec = CHARACTER_SPEC[name];
       ch.size = s * spec.size;
       ch.targetX = w * spec.x;
-      ch.targetY = h * (spec.row === 0 ? 0.75 : 0.87) + (spec.yOffset || 0) * ch.size;
+      ch.targetY = (spec.row === 0 ? normalBackY : normalFrontY) + (spec.yOffset || 0) * ch.size;
       if (!ch.visible || ch.enter >= 1) {
         ch.x = ch.targetX;
         ch.y = ch.targetY;
@@ -1640,6 +1655,139 @@
     circle(s * 0.2, -s * 0.12, s * 0.04, '#e88080');
     ctx.globalAlpha = 1;
 
+    ctx.restore();
+  }
+
+  // ===== Friendly Brown Bear =====
+  function drawBrownBearAt(x, y, size, t, enter, react) {
+    const s = size, happy = react || 0;
+    ctx.save();
+    ctx.translate(x, y + Math.sin(t * 1.7) * s * 0.02);
+    ctx.rotate(Math.sin(t * 1.3) * 0.035);
+    const scale = easeOutBack(Math.min(1, enter));
+    ctx.scale(scale, scale);
+    if (!G.ending) {
+      ctx.globalAlpha = 0.12;
+      ellipse(0, s * 0.36, s * 0.34, s * 0.05, '#000');
+      ctx.globalAlpha = 1;
+    }
+    ellipse(0, s * 0.04, s * 0.31, s * 0.31, C.brownBearBody);
+    ellipse(0, s * 0.09, s * 0.22, s * 0.22, C.brownBearLight);
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(side * s * 0.27, -s * 0.03);
+      ctx.rotate(-side * (0.12 + happy * (0.5 + Math.sin(t * 11) * 0.35)));
+      ellipse(0, s * 0.1, s * 0.09, s * 0.18, C.brownBearBody);
+      ellipse(0, s * 0.22, s * 0.07, s * 0.055, C.brownBearDark);
+      ctx.restore();
+      ellipse(side * s * 0.18, s * 0.31, s * 0.13, s * 0.075, C.brownBearDark);
+      for (let i = -1; i <= 1; i++) {
+        circle(side * s * 0.18 + i * s * 0.035, s * 0.33, s * 0.012, C.brownBearMuzzle);
+      }
+      circle(side * s * 0.22, -s * 0.49, s * 0.1, C.brownBearBody);
+      circle(side * s * 0.22, -s * 0.49, s * 0.055, C.brownBearMuzzle);
+    }
+    ellipse(0, -s * 0.27, s * 0.29, s * 0.27, C.brownBearBody);
+    ellipse(-s * 0.05, -s * 0.35, s * 0.19, s * 0.14, C.brownBearLight);
+    for (const side of [-1, 1]) {
+      if (happy > 0.2 || Math.sin(t * 0.4 + 1) > 0.98) {
+        ctx.strokeStyle = C.brownBearDark;
+        ctx.lineWidth = Math.max(1, s * 0.025);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(side * s * 0.11, -s * 0.29, s * 0.037, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+      } else {
+        circle(side * s * 0.11, -s * 0.3, s * 0.035, C.eye);
+        circle(side * s * 0.11 + s * 0.01, -s * 0.313, s * 0.013, '#fff');
+      }
+    }
+    ellipse(0, -s * 0.14, s * 0.17, s * 0.12, C.brownBearMuzzle);
+    ellipse(0, -s * 0.2, s * 0.06, s * 0.04, C.brownBearDark);
+    ctx.strokeStyle = C.brownBearDark;
+    ctx.lineWidth = Math.max(0.8, s * 0.017);
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.18);
+    ctx.lineTo(0, -s * 0.11);
+    ctx.moveTo(-s * 0.055, -s * 0.1);
+    ctx.quadraticCurveTo(0, -s * 0.045, s * 0.055, -s * 0.1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ===== Leopard Cat (삵): Spots and a Ringed Tail =====
+  function drawLeopardCatAt(x, y, size, t, enter, react) {
+    const s = size, happy = react || 0;
+    ctx.save();
+    ctx.translate(x, y + Math.sin(t * 2.2) * s * 0.015);
+    ctx.rotate(Math.sin(t * 1.7) * 0.025);
+    const scale = easeOutBack(Math.min(1, enter));
+    ctx.scale(scale, scale);
+    if (!G.ending) {
+      ctx.globalAlpha = 0.12;
+      ellipse(0, s * 0.34, s * 0.3, s * 0.05, '#000');
+      ctx.globalAlpha = 1;
+    }
+    ctx.save();
+    ctx.translate(s * 0.19, s * 0.16);
+    ctx.rotate(-0.25 + Math.sin(t * (happy > 0 ? 11 : 2.4)) * (0.12 + happy * 0.25));
+    ellipse(s * 0.19, 0, s * 0.25, s * 0.065, C.leopardCatBody);
+    ctx.strokeStyle = C.leopardCatDark;
+    ctx.lineWidth = s * 0.032;
+    for (const dx of [0.08, 0.18, 0.28, 0.37]) {
+      ctx.beginPath();
+      ctx.moveTo(s * dx, -s * 0.05);
+      ctx.lineTo(s * dx, s * 0.05);
+      ctx.stroke();
+    }
+    ellipse(s * 0.42, 0, s * 0.035, s * 0.045, C.leopardCatDark);
+    ctx.restore();
+    ellipse(0, s * 0.05, s * 0.26, s * 0.28, C.leopardCatBody);
+    ellipse(0, s * 0.1, s * 0.13, s * 0.2, C.leopardCatLight);
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        ellipse(side * s * (i % 2 ? 0.2 : 0.17), s * (-0.07 + i * 0.08), s * 0.022, s * 0.032, C.leopardCatSpot);
+      }
+      ellipse(side * s * 0.14, s * 0.29, s * 0.095, s * 0.055, C.leopardCatLight);
+      circle(side * s * 0.2, -s * 0.44, s * 0.085, C.leopardCatDark);
+      circle(side * s * 0.2, -s * 0.44, s * 0.06, C.leopardCatBody);
+      circle(side * s * 0.2, -s * 0.44, s * 0.033, C.leopardCatLight);
+    }
+    ellipse(0, -s * 0.25, s * 0.255, s * 0.235, C.leopardCatBody);
+    ctx.strokeStyle = C.leopardCatDark;
+    ctx.lineWidth = Math.max(1, s * 0.022);
+    ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * s * 0.065, -s * 0.45);
+      ctx.lineTo(side * s * 0.09, -s * 0.36);
+      ctx.moveTo(side * s * 0.13, -s * 0.43);
+      ctx.lineTo(side * s * 0.17, -s * 0.36);
+      ctx.stroke();
+      ellipse(side * s * 0.065, -s * 0.15, s * 0.1, s * 0.075, C.leopardCatLight);
+      if (happy > 0.2 || Math.sin(t * 0.5 + 3) > 0.98) {
+        ctx.beginPath();
+        ctx.arc(side * s * 0.1, -s * 0.28, s * 0.035, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+      } else {
+        ellipse(side * s * 0.1, -s * 0.29, s * 0.033, s * 0.04, C.eye);
+        circle(side * s * 0.1 + s * 0.009, -s * 0.305, s * 0.013, '#fff');
+      }
+      for (let i = 0; i < 2; i++) {
+        circle(side * s * 0.21, -s * (0.22 - i * 0.06), s * 0.018, C.leopardCatSpot);
+        ctx.beginPath();
+        ctx.moveTo(side * s * 0.08, -s * (0.14 - i * 0.025));
+        ctx.lineTo(side * s * 0.29, -s * (0.15 - i * 0.05));
+        ctx.stroke();
+      }
+    }
+    ellipse(0, -s * 0.18, s * 0.03, s * 0.022, C.leopardCatDark);
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.16);
+    ctx.lineTo(0, -s * 0.1);
+    ctx.moveTo(-s * 0.04, -s * 0.1);
+    ctx.quadraticCurveTo(0, -s * 0.065, s * 0.04, -s * 0.1);
+    ctx.stroke();
     ctx.restore();
   }
 

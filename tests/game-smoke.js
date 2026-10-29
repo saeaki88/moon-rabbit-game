@@ -5,7 +5,7 @@ const source = typeof readFile === 'function'
   ? readFile('game.js')
   : require('node:fs').readFileSync('game.js', 'utf8');
 const log = typeof print === 'function' ? print : console.log;
-const friends = ['turtle', 'penguin', 'fox', 'lion', 'squid', 'duck', 'tiger', 'sunBear', 'chick', 'cat'];
+const friends = ['turtle', 'penguin', 'fox', 'brownBear', 'lion', 'leopardCat', 'squid', 'duck', 'tiger', 'sunBear', 'chick', 'cat'];
 new Function(source);
 
 function assert(condition, message) {
@@ -87,7 +87,7 @@ function createGame(width, height, seed = 20261013, withAudio = true) {
 function runEnding(width, height, ending, seed) {
   const game = createGame(width, height, seed);
   const { G, step, advance, tap, sound, gains } = game;
-  assert(G.characterOrder.length === 10 && new Set(G.characterOrder).size === 10, 'Friends missing or duplicated');
+  assert(G.characterOrder.length === 12 && new Set(G.characterOrder).size === 12, 'Friends missing or duplicated');
   sound.click();
   assert(!G.soundEnabled && !G.started && sound.attributes['aria-pressed'] === 'true', 'Mute button started the game or missed accessibility state');
   step();
@@ -101,7 +101,7 @@ function runEnding(width, height, ending, seed) {
   assert(G.dimming < 1, 'Dimming did not fade');
 
   const vegetableTypes = new Set();
-  const thresholds = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12];
+  const thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   for (let score = 1; score <= 14; score++) {
     for (let attempts = 0; !G.carrots.length && attempts < 80; attempts++) step();
     assert(G.carrots.length > 0, 'No reachable vegetable spawned');
@@ -122,7 +122,7 @@ function runEnding(width, height, ending, seed) {
     }
   }
   assert(vegetableTypes.size === 2, 'Both vegetable types were not exercised');
-  assert(G.sunBear.visible && friends.every(name => G[name].visible), 'A new or existing friend missed the ending');
+  assert(G.brownBear.visible && G.leopardCat.visible && friends.every(name => G[name].visible), 'A new or existing friend missed the ending');
   assert(G.endingPending && G.carrots.length === 0 && G.spawnTimes.length === 0, 'Goal did not stop spawning');
   assert(['arc', 'spiral', 'bounce', 'float'].includes(G.endingType), 'Invalid random ending selection');
   G.endingType = ending;
@@ -131,6 +131,10 @@ function runEnding(width, height, ending, seed) {
   G.lion.enter = 0.1;
   G.sunBear.x = -G.sunBear.size * 2;
   G.sunBear.enter = 0.1;
+  G.brownBear.x = -G.brownBear.size * 2;
+  G.brownBear.enter = 0.1;
+  G.leopardCat.x = width + G.leopardCat.size * 2;
+  G.leopardCat.enter = 0.1;
   tap(width / 2, height / 2);
   assert(G.score === 14, 'Pending ending accepted another pickup');
   sound.click();
@@ -139,6 +143,8 @@ function runEnding(width, height, ending, seed) {
   assert(G.ending && G.endingPhase === 'flying' && G.lion.enter === 1, 'Late friend did not join the ending');
   assert(G.flightLion.startX === G.lion.targetX, 'Late friend flight started off screen');
   assert(G.sunBear.enter === 1 && G.flightSunBear.startX === G.sunBear.targetX, 'Late sun bear did not join the ending fully visible');
+  assert(G.brownBear.enter === 1 && G.flightBrownBear.startX === G.brownBear.targetX, 'Late brown bear did not join the ending');
+  assert(G.leopardCat.enter === 1 && G.flightLeopardCat.startX === G.leopardCat.targetX, 'Late leopard cat did not join the ending');
 
   let celebrated = false;
   for (let frames = 0; G.endingPhase !== 'done' && frames < 250; frames++) {
@@ -164,7 +170,7 @@ function runEnding(width, height, ending, seed) {
   assert(G.score === 0 && !G.ending && !G.endingPending && G.started, 'Replay did not reset the game');
   assert(friends.every(name => !G[name].visible && G[name].react === 0), 'Replay did not reset all friends');
   assert(G.spawnTimes.length === 0 && G.dimming === 0 && !G.soundEnabled, 'Replay leaked delayed spawns or reset mute');
-  assert(G.carrots.length === 1 && new Set(G.characterOrder).size === 10, 'Replay did not restart correctly');
+  assert(G.carrots.length === 1 && new Set(G.characterOrder).size === 12, 'Replay did not restart correctly');
   assert(game.destinations.slice(1).every(destination => destination === gains[0]), 'A sound bypassed the mute gain');
   log('PASS ' + width + 'x' + height + ' ' + ending);
 }
@@ -196,12 +202,12 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390]];
   const { G, tap, advance } = createGame(390, 844);
   tap(195, 422);
   G.carrots = [];
-  for (const name of ['lion', 'tiger', 'fox', 'sunBear']) {
+  for (const name of ['lion', 'tiger', 'fox', 'sunBear', 'brownBear', 'leopardCat']) {
     const ch = G[name];
     ch.visible = true; ch.enter = 1; ch.x = ch.targetX; ch.y = ch.targetY;
     tap(ch.x, ch.y);
     assert(ch.react === 1 && G.score === 0, 'Friend touch failed: ' + name);
-    assert(G.particles.slice(-7).every(p => p.type === (name === 'tiger' ? 'star' : 'heart')), 'Wrong touch particles');
+    assert(G.particles.slice(-7).every(p => p.type === (name === 'tiger' || name === 'leopardCat' ? 'star' : 'heart')), 'Wrong touch particles');
     advance(200);
     assert(ch.react < 1, 'Touch reaction did not settle');
   }
