@@ -413,7 +413,7 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   assert(game.gains.length - gainsBefore <= 3, 'Stale BGM scheduled a backlog of notes');
 }
 
-// Speech is optional, prefers local Korean voices, and never changes a game action.
+// Speech is optional, prefers explicit Korean quality hints, and never changes a game action.
 {
   const game = createGame(390, 844, 8, false);
   game.start();
@@ -438,21 +438,42 @@ const localKorean = { name: 'Local Korean', lang: 'ko-KR', localService: true };
 const remoteKorean = { name: 'Remote Korean', lang: 'ko-KR', localService: false, default: true };
 const unknownKorean = { name: 'Korean without service metadata', lang: 'ko_KR' };
 const localEnglish = { name: 'Local English', lang: 'en-US', localService: true, default: true };
-for (const [voices, expected] of [
-  [[remoteKorean, localEnglish, localKorean], localKorean],
-  [[remoteKorean, localEnglish], remoteKorean],
-  [[unknownKorean, localEnglish], unknownKorean],
-  [[localEnglish], undefined],
-  [[], undefined],
+const localDefaultKorean = { ...localKorean, name: 'Default Korean', default: true };
+const enhancedKorean = { ...localDefaultKorean, name: 'Korean Enhanced' };
+const naturalKorean = { ...remoteKorean, name: 'Korean Natural' };
+const neuralKorean = { ...unknownKorean, voiceURI: 'provider.ko-KR.Neural.voice' };
+const premiumKorean = { ...remoteKorean, name: 'Korean PREMIUM' };
+const premiumURIKorean = { ...unknownKorean, voiceURI: 'com.apple.voice.premium.ko-KR.voice' };
+const premiumLocalKorean = { ...localKorean, name: 'Korean Premium' };
+const premiumDefaultLocalKorean = { ...premiumLocalKorean, default: true };
+const premiumEnglish = { ...localEnglish, name: 'English Premium' };
+for (const [scenario, voices, expected] of [
+  ['ordinary local default', [remoteKorean, localKorean, localDefaultKorean], localDefaultKorean],
+  ['ordinary local', [remoteKorean, localEnglish, localKorean], localKorean],
+  ['ordinary default', [unknownKorean, remoteKorean, localEnglish], remoteKorean],
+  ['ordinary first', [unknownKorean, { ...unknownKorean }], unknownKorean],
+  ['unknown service', [unknownKorean, localEnglish], unknownKorean],
+  ['enhanced name', [localDefaultKorean, enhancedKorean], enhancedKorean],
+  ['natural name', [localDefaultKorean, naturalKorean], naturalKorean],
+  ['neural URI', [localDefaultKorean, neuralKorean], neuralKorean],
+  ['premium above enhanced', [enhancedKorean, premiumKorean], premiumKorean],
+  ['premium URI', [enhancedKorean, premiumURIKorean], premiumURIKorean],
+  ['equal quality local default', [premiumKorean, premiumLocalKorean, premiumDefaultLocalKorean], premiumDefaultLocalKorean],
+  ['equal quality local', [premiumKorean, premiumLocalKorean], premiumLocalKorean],
+  ['equal quality default', [premiumURIKorean, premiumKorean], premiumKorean],
+  ['equal quality first', [premiumURIKorean, { ...premiumURIKorean }], premiumURIKorean],
+  ['foreign premium excluded', [premiumEnglish, localKorean], localKorean],
+  ['foreign-only fallback', [premiumEnglish, localEnglish], undefined],
+  ['empty-list fallback', [], undefined],
 ]) {
   const speech = speechMock(voices);
   const game = createGame(390, 844, 1, true, { speech });
   game.start();
   assert(speech.spoken.length === 1 && game.G.carrots.length === 1, 'Voice selection prevented the initial spoken request');
   const first = speech.spoken[0];
-  assert(first.voice === expected, 'Voice selection did not prefer local Korean or assigned a foreign voice');
+  assert(first.voice === expected, 'Korean voice selection failed: ' + scenario);
   assert(first.lang === (expected ? expected.lang : 'ko-KR'), 'Unspecified-voice fallback did not request Korean');
-  assert(first.text === '당근 한 개 주세요', 'Initial request did not use spoken Korean quantity');
+  assert(first.text === '당근 한 개 줄래?', 'Initial request did not use conversational Korean quantity');
   assert(speech.cancellations === 0, 'Starting an idle speech engine issued an unnecessary cancel');
 }
 
@@ -551,7 +572,7 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   const game = createGame(390, 844, 4, true, { speech });
   game.start();
   const first = speech.spoken[0];
-  assert(first.lang === 'ko-KR' && first.rate >= 0.6 && first.rate < 1 && first.volume > 0 && first.volume <= 1, 'Speech did not use a gentle Korean voice');
+  assert(first.lang === 'ko-KR' && first.rate === 0.96 && first.pitch === 1 && first.volume === 0.65, 'Speech did not preserve the conversational pace, normal pitch and gentle volume');
   first.onstart();
   assert(game.gains[0].gain.value === 0.25, 'Speaking did not lower existing audio');
   game.tap(30, 30);
@@ -588,7 +609,7 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   for (let round = 0; round < 3; round++) {
     const request = requests[round];
     const label = request.type === 'carrot' ? '당근' : '오이';
-    assert(speech.spoken[speech.spoken.length - 1].text === label + ' ' + quantities[round] + ' 개 주세요', 'Next request used the wrong spoken quantity');
+    assert(speech.spoken[speech.spoken.length - 1].text === label + ' ' + quantities[round] + ' 개 줄래?', 'Next request used the wrong spoken quantity or conversational wording');
     for (let count = 1; count <= request.count; count++) {
       game.advance(1100);
       const item = game.G.carrots.find(value => value.type === request.type);
@@ -624,14 +645,14 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   assert(G.requestIndex === 1 && G.requestItems.length === 0, 'Rabbit dialogue did not reach the two-item request');
   const scoreBefore = G.score;
   mainRabbit();
-  assert(lastText() === '오이 두 개 찾아 줘' && G.feedback === lastText(), 'Main rabbit did not ask for the initial quantity');
+  assert(lastText() === '오이 두 개 찾아 줄래?' && G.feedback === lastText(), 'Main rabbit did not ask for the initial quantity');
   assert(G.rabbit.bounce === 1 && G.rabbit.happy === 2 && G.score === scoreBefore, 'Dialogue lost the main rabbit reaction or added score');
   const spokenBefore = speech.spoken.length;
   for (let i = 0; i < 4; i++) { mainRabbit(); moonRabbit(); }
   assert(speech.spoken.length === spokenBefore, 'Repeated rabbit taps restarted the same dialogue within the cooldown');
   assert(G.dimming === 0.3 && G.score === scoreBefore, 'Moon dialogue lost its reaction or changed score');
   advance(1100); moonRabbit();
-  assert(speech.spoken.length === spokenBefore + 1 && lastText() === '오이 두 개 찾아 줘', 'Moon rabbit could not repeat dialogue after the cooldown');
+  assert(speech.spoken.length === spokenBefore + 1 && lastText() === '오이 두 개 찾아 줄래?', 'Moon rabbit could not repeat dialogue after the cooldown');
   assert(G.hintUntil === G.clock + 2800, 'Rabbit dialogue did not renew the visual guide');
 
   const correct = G.carrots.find(item => item.type === 'cucumber');
@@ -641,7 +662,7 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   assert(speech.spoken.length === inFlightSpeech && G.feedback === inFlightFeedback, 'In-flight dialogue announced a stale remaining quantity');
   assert(G.flyingCarrots.length === 1 && G.score === scoreBefore, 'Rabbit taps changed an in-flight delivery');
   advance(300); mainRabbit();
-  assert(lastText() === '오이 한 개 더 찾아 줘' && G.requestItems.length === 1 && G.score === scoreBefore + 1, 'Dialogue repeated the whole goal instead of the remaining quantity');
+  assert(lastText() === '오이 한 개 더 찾아 줄래?' && G.requestItems.length === 1 && G.score === scoreBefore + 1, 'Dialogue repeated the whole goal instead of the remaining quantity');
   advance(1200);
   const final = G.carrots.find(item => item.type === 'cucumber');
   tap(final.x, final.y); advance(400);
@@ -661,13 +682,13 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   game.start();
   G.requestIndex = 2; G.score = 3; G.requestItems = []; G.carrots = [];
   tap(G.rabbit.x, G.rabbit.y);
-  assert(speech.spoken[speech.spoken.length - 1].text === '당근 세 개 찾아 줘', 'Three-item dialogue used the wrong quantity');
+  assert(speech.spoken[speech.spoken.length - 1].text === '당근 세 개 찾아 줄래?', 'Three-item dialogue used the wrong quantity');
   G.requestItems = ['carrot']; G.score = 4;
   tap(G.moonX, G.moonY);
-  assert(speech.spoken[speech.spoken.length - 1].text === '당근 두 개 더 찾아 줘', 'Two remaining items were announced incorrectly');
+  assert(speech.spoken[speech.spoken.length - 1].text === '당근 두 개 더 찾아 줄래?', 'Two remaining items were announced incorrectly');
   G.requestItems.push('carrot'); G.score = 5;
   tap(G.rabbit.x, G.rabbit.y);
-  assert(speech.spoken[speech.spoken.length - 1].text === '당근 한 개 더 찾아 줘' && G.score === 5, 'One remaining item was announced incorrectly');
+  assert(speech.spoken[speech.spoken.length - 1].text === '당근 한 개 더 찾아 줄래?' && G.score === 5, 'One remaining item was announced incorrectly');
 }
 
 // Muted or unavailable speech still gives the same visual reply and tap guide.
@@ -681,7 +702,7 @@ for (const mode of ['muted', 'unavailable']) {
   const spokenBefore = speech.spoken.length;
   tap(G.rabbit.x, G.rabbit.y); tap(G.moonX, G.moonY);
   assert(speech.spoken.length === spokenBefore, 'Silent rabbit dialogue spoke in ' + mode + ' mode');
-  assert(G.feedback === '오이 한 개 더 찾아 줘' && G.hintUntil === G.clock + 2800, 'Silent rabbit dialogue lost its reply or visual guide');
+  assert(G.feedback === '오이 한 개 더 찾아 줄래?' && G.hintUntil === G.clock + 2800, 'Silent rabbit dialogue lost its reply or visual guide');
   assert(game.elements['learning-status'].textContent.includes(G.feedback) && G.score === 2, 'Silent reply was unavailable to status feedback or changed progress');
 }
 

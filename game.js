@@ -425,9 +425,13 @@
     if (!guidanceSynth) return null;
     try {
       const voices = guidanceSynth.getVoices().filter(voice => /^ko(?:[-_]|$)/i.test(voice.lang));
-      return voices.find(voice => voice.localService === true && voice.default) ||
-        voices.find(voice => voice.localService === true) ||
-        voices.find(voice => voice.default) || voices[0] || null;
+      // Web Speech has no quality field; use explicit provider labels when available.
+      const score = voice => {
+        const label = (voice.name || '') + ' ' + (voice.voiceURI || '');
+        const quality = /\bpremium\b/i.test(label) ? 3 : /\b(enhanced|natural|neural)\b/i.test(label) ? 2 : 0;
+        return quality * 10 + (voice.localService === true ? 2 : 0) + (voice.default ? 1 : 0);
+      };
+      return voices.reduce((best, voice) => !best || score(voice) > score(best) ? voice : best, null);
     } catch (_) { return null; }
   }
 
@@ -459,7 +463,7 @@
       // Speak during the initial tap even before iOS has populated its voice list.
       if (voice) utterance.voice = voice;
       utterance.lang = voice ? voice.lang : 'ko-KR';
-      utterance.rate = 0.88;
+      utterance.rate = 0.96;
       utterance.pitch = 1;
       utterance.volume = 0.65;
       utterance.onstart = () => {
@@ -503,7 +507,7 @@
     if (!canSpeakGuidance() || G.endingPending || G.requestReadyAt || G.flyingCarrots.length) return;
     const request = currentRequest();
     const quantity = ['', '한', '두', '세'][request.count];
-    const text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개 주세요';
+    const text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개 줄래?';
     speakGuidance(text, allowPending);
   }
 
@@ -515,7 +519,7 @@
     if (remaining) {
       const quantity = ['', '한', '두', '세'][remaining];
       text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개' +
-        (G.requestItems.length ? ' 더' : '') + ' 찾아 줘';
+        (G.requestItems.length ? ' 더' : '') + ' 찾아 줄래?';
       G.hintUntil = G.clock + 2800;
     } else if (G.endingPending) {
       G.endingStartAt = G.clock + 1200;
