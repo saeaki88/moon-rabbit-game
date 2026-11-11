@@ -550,6 +550,22 @@
       { text: '내 귀가 쫑긋.' },
     ],
   };
+  // Small, consistent differences keep each friend recognizable without sharp voices.
+  const FRIEND_VOICE_PROFILES = {
+    turtle:     { slot: 0, rate: 0.92, pitch: 0.94 },
+    penguin:    { slot: 1, rate: 0.95, pitch: 1.02 },
+    fox:        { slot: 2, rate: 0.99, pitch: 1.08 },
+    brownBear:  { slot: 3, rate: 0.94, pitch: 0.90 },
+    lion:       { slot: 4, rate: 0.96, pitch: 0.92 },
+    leopardCat: { slot: 5, rate: 0.98, pitch: 1.04 },
+    squid:      { slot: 6, rate: 0.96, pitch: 1.10 },
+    duck:       { slot: 7, rate: 0.97, pitch: 1.06 },
+    tiger:      { slot: 8, rate: 0.97, pitch: 0.96 },
+    sunBear:    { slot: 9, rate: 0.95, pitch: 0.93 },
+    chick:      { slot: 10, rate: 1.02, pitch: 1.12 },
+    cat:        { slot: 11, rate: 0.98, pitch: 1.11 },
+  };
+  const friendVoiceFamilies = { local: {}, general: {} };
   let friendTalkReadyAt = 0;
   let friendLastLines = {};
   const COUNT_WORDS = ['하나씩 주세요', '하나', '둘', '셋'];
@@ -573,19 +589,51 @@
     return guidanceSynth && G.started && G.soundEnabled && !G.paused && !document.hidden && !G.ending;
   }
 
-  function koreanVoice(localOnly = false) {
-    if (!guidanceSynth) return null;
+  function koreanVoices(localOnly = false) {
+    if (!guidanceSynth) return [];
     try {
-      const voices = guidanceSynth.getVoices().filter(voice => /^ko(?:[-_]|$)/i.test(voice.lang) &&
+      return guidanceSynth.getVoices().filter(voice => /^ko(?:[-_]|$)/i.test(voice.lang) &&
         (!localOnly || voice.localService === true));
-      // Web Speech has no quality field; use explicit provider labels when available.
-      const score = voice => {
-        const label = (voice.name || '') + ' ' + (voice.voiceURI || '');
-        const quality = /\bpremium\b/i.test(label) ? 3 : /\b(enhanced|natural|neural)\b/i.test(label) ? 2 : 0;
-        return quality * 10 + (voice.localService === true ? 2 : 0) + (voice.default ? 1 : 0);
-      };
-      return voices.reduce((best, voice) => !best || score(voice) > score(best) ? voice : best, null);
-    } catch (_) { return null; }
+    } catch (_) { return []; }
+  }
+
+  function voiceScore(voice) {
+    // Web Speech has no quality field; use explicit provider labels when available.
+    const label = (voice.name || '') + ' ' + (voice.voiceURI || '');
+    const quality = /\bpremium\b/i.test(label) ? 3 : /\b(enhanced|natural|neural)\b/i.test(label) ? 2 : 0;
+    return quality * 10 + (voice.localService === true ? 2 : 0) + (voice.default ? 1 : 0);
+  }
+
+  function koreanVoice(localOnly = false) {
+    return koreanVoices(localOnly).reduce((best, voice) =>
+      !best || voiceScore(voice) > voiceScore(best) ? voice : best, null);
+  }
+
+  function friendVoice(name, localOnly) {
+    const voices = koreanVoices(localOnly);
+    const local = voices.filter(voice => voice.localService === true);
+    // Keep a friend's named and unnamed lines in the same locally available voice.
+    const candidates = local.length ? local : voices;
+    const families = new Map();
+    candidates.forEach(voice => {
+      // Quality variants of one speaker are not separate character voices.
+      const family = (voice.name || voice.voiceURI || voice.lang).toLowerCase()
+        .replace(/\b(premium|enhanced|natural|neural|super-compact|compact|default)\b/g, '')
+        .replace(/[()[\]{}]/g, '').replace(/\s+/g, ' ').trim();
+      const current = families.get(family);
+      if (!current || voiceScore(voice) > voiceScore(current) ||
+          (voiceScore(voice) === voiceScore(current) && (voice.voiceURI || '') < (current.voiceURI || ''))) {
+        families.set(family, voice);
+      }
+    });
+    const pool = Array.from(families.entries()).sort((a, b) =>
+      voiceScore(b[1]) - voiceScore(a[1]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    if (!pool.length) return null;
+    const remembered = friendVoiceFamilies[local.length ? 'local' : 'general'];
+    const assigned = pool.find(([family]) => family === remembered[name]) ||
+      pool[FRIEND_VOICE_PROFILES[name].slot % pool.length];
+    remembered[name] = assigned[0];
+    return assigned[1];
   }
 
   function cancelGuidance() {
@@ -604,12 +652,13 @@
     applyMasterGain();
   }
 
-  function speakGuidance(text, allowPendingRequest = false, localOnly = false) {
+  function speakGuidance(text, allowPendingRequest = false, localOnly = false, speaker = 'rabbit') {
     const now = performance.now();
     if (canSpeakGuidance() && text === lastGuidanceText && now - lastGuidanceAt < 1000) return true;
     cancelGuidance();
     if (!canSpeakGuidance()) return false;
-    const voice = koreanVoice(localOnly);
+    const profile = FRIEND_VOICE_PROFILES[speaker];
+    const voice = profile ? friendVoice(speaker, localOnly) : koreanVoice(localOnly);
     // A personal name must never reach a remote or implicit default voice.
     if (localOnly && !voice) return false;
     const generation = guidanceGeneration;
@@ -618,8 +667,8 @@
       // Speak during the initial tap even before iOS has populated its voice list.
       if (voice) utterance.voice = voice;
       utterance.lang = voice ? voice.lang : 'ko-KR';
-      utterance.rate = 0.96;
-      utterance.pitch = 1;
+      utterance.rate = profile ? profile.rate : 0.96;
+      utterance.pitch = profile ? profile.pitch : 1;
       utterance.volume = 0.65;
       utterance.onstart = () => {
         if (generation !== guidanceGeneration) return;
@@ -704,9 +753,9 @@
     friendLastLines[name] = index;
     friendTalkReadyAt = G.clock + 1000;
     setFeedback(FRIEND_LABELS[name] + ' · ' + text);
-    const spoken = speakGuidance(text, false, personal);
+    const spoken = speakGuidance(text, false, personal, name);
     if (personal && !spoken && canSpeakGuidance()) {
-      speakGuidance('친구야 ' + line.text);
+      speakGuidance('친구야 ' + line.text, false, false, name);
     }
     return true;
   }

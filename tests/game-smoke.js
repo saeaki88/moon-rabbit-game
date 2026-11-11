@@ -454,6 +454,16 @@ const premiumURIKorean = { ...unknownKorean, voiceURI: 'com.apple.voice.premium.
 const premiumLocalKorean = { ...localKorean, name: 'Korean Premium' };
 const premiumDefaultLocalKorean = { ...premiumLocalKorean, default: true };
 const premiumEnglish = { ...localEnglish, name: 'English Premium' };
+const friendVoiceSettings = {
+  turtle: [0.92, 0.94], penguin: [0.95, 1.02], fox: [0.99, 1.08], brownBear: [0.94, 0.90],
+  lion: [0.96, 0.92], leopardCat: [0.98, 1.04], squid: [0.96, 1.10], duck: [0.97, 1.06],
+  tiger: [0.97, 0.96], sunBear: [0.95, 0.93], chick: [1.02, 1.12], cat: [0.98, 1.11],
+};
+
+function assertFriendVoice(utterance, name) {
+  const [rate, pitch] = friendVoiceSettings[name];
+  assert(utterance.rate === rate && utterance.pitch === pitch && utterance.volume === 0.65, 'Animal lost its voice settings or gentle volume: ' + name);
+}
 
 function showFriend(game, name) {
   game.G.carrots = [];
@@ -468,6 +478,17 @@ function showFriend(game, name) {
 function finishSpeech(speech) {
   const utterance = speech.spoken[speech.spoken.length - 1];
   if (utterance) { utterance.onstart(); utterance.onend(); }
+}
+
+function nextFriendSpeech(game, speech, name) {
+  finishSpeech(speech); game.advance(1100);
+  const ch = showFriend(game, name);
+  const before = speech.spoken.length;
+  game.tap(ch.x, ch.y);
+  assert(speech.spoken.length === before + 1, 'Ready animal tap did not speak: ' + name);
+  const utterance = speech.spoken[speech.spoken.length - 1];
+  assertFriendVoice(utterance, name);
+  return utterance;
 }
 
 function tapFriendGreeting(game, speech, name, greeting) {
@@ -792,7 +813,10 @@ for (const [index, name] of friends.entries()) {
     const spokenBefore = speech.spoken.length;
     game.tap(ch.x, ch.y);
     assert(speech.spoken.length === spokenBefore + 1 && ch.react === 1, 'Animal tap did not speak and react: ' + name);
-    const reply = speech.spoken[speech.spoken.length - 1].text;
+    const utterance = speech.spoken[speech.spoken.length - 1];
+    assertFriendVoice(utterance, name);
+    assert(utterance.voice === localKorean, 'Single available Korean voice was not retained: ' + name);
+    const reply = utterance.text;
     assert(reply && reply !== previous, 'Animal repeated its previous line: ' + name);
     assert(game.G.feedback.includes(reply) && game.elements['learning-status'].textContent.includes(game.api.requestLabel()), 'Animal dialogue hid its reply or the current request: ' + name);
     assert(JSON.stringify([game.G.score, game.G.requestIndex, game.G.requestItems,
@@ -804,6 +828,91 @@ for (const [index, name] of friends.entries()) {
   }
   assert(seen.size >= 3, 'Animal did not offer enough dialogue variety: ' + name);
   assert(Array.from(seen).some(reply => reply.startsWith('친구야 ')) && Array.from(seen).some(reply => !reply.startsWith('친구야 ')), 'Animal did not mix greetings with observation dialogue: ' + name);
+}
+
+// Distinct local speakers are shared across animals, while quality variants remain one speaker.
+{
+  const voiceA = { name: 'Voice A', voiceURI: 'mock.a', lang: 'ko-KR', localService: true };
+  const voiceACompact = { ...voiceA, name: 'Voice A (Compact)', voiceURI: 'mock.a.compact' };
+  const voiceAEnhanced = { ...voiceA, name: 'Voice A (Enhanced)', voiceURI: 'mock.a.enhanced' };
+  const voiceAPremium = { ...voiceA, name: 'Voice A (Premium)', voiceURI: 'mock.a.premium' };
+  const voiceB = { ...voiceA, name: 'Voice B', voiceURI: 'mock.b' };
+  const voiceC = { ...voiceA, name: 'Voice C', voiceURI: 'mock.c' };
+  const voices = [voiceC, voiceACompact, premiumKorean, voiceB, voiceAPremium, premiumEnglish, voiceA, voiceAEnhanced];
+  const speech = speechMock(voices);
+  const game = createGame(390, 844, 80, true, { speech, storage: { 'moon-rabbit-play-name': '별이' } });
+  game.start();
+  assert(speech.spoken[0].voice === voiceAPremium && speech.spoken[0].rate === 0.96 && speech.spoken[0].pitch === 1, 'Initial request no longer used the best Korean voice and normal guidance settings');
+  const assigned = {};
+  for (const [index, name] of friends.entries()) {
+    const expected = [voiceAPremium, voiceB, voiceC][index % 3];
+    const kinds = new Set();
+    for (let turn = 0; turn < 8; turn++) {
+      const utterance = nextFriendSpeech(game, speech, name);
+      assert(utterance.voice === expected, 'Animal assignment duplicated quality variants, used a remote voice or changed between lines: ' + name);
+      kinds.add(utterance.text.startsWith('별이야 ') ? 'named' : 'observation');
+    }
+    assert(kinds.size === 2, 'Voice consistency did not exercise named and observation lines: ' + name);
+    assigned[name] = expected.voiceURI;
+  }
+  assert(new Set(Object.values(assigned)).size === 3, 'Available local speaker families were not distributed across animals');
+  const reordered = voices.slice().reverse().map(voice => ({ ...voice }));
+  const voiceZero = { ...voiceA, name: 'Voice 0 (Premium)', voiceURI: 'mock.zero.premium' };
+  for (const refreshed of [reordered, [voiceZero, ...reordered]]) {
+    speech.change(refreshed);
+    for (const name of friends) {
+      const utterance = nextFriendSpeech(game, speech, name);
+      assert(utterance.voice.voiceURI === assigned[name] && refreshed.includes(utterance.voice), 'Voice refresh changed an existing speaker or reused a stale voice object: ' + name);
+    }
+  }
+  speech.change([voiceZero, voiceA, voiceAEnhanced, voiceB, voiceC, premiumKorean]);
+  for (const [index, name] of friends.entries()) {
+    const expected = [voiceAEnhanced, voiceB, voiceC][index % 3];
+    assert(nextFriendSpeech(game, speech, name).voice === expected, 'Removing a quality variant changed the remembered speaker family: ' + name);
+  }
+  speech.change([voiceZero, voiceAEnhanced, voiceC, premiumKorean]);
+  assert(nextFriendSpeech(game, speech, 'penguin').voice === voiceAEnhanced, 'A removed speaker family was not reassigned to an available voice');
+  assert(nextFriendSpeech(game, speech, 'fox').voice === voiceC, 'Removing another speaker changed an available assigned family');
+  finishSpeech(speech); game.advance(1100); game.tap(30, 30);
+  let guidance = speech.spoken[speech.spoken.length - 1];
+  assert(guidance.voice === voiceZero && guidance.rate === 0.96 && guidance.pitch === 1 && guidance.volume === 0.65, 'Picture-card guidance inherited an animal voice or profile');
+  game.tap(game.G.rabbit.x, game.G.rabbit.y);
+  guidance = speech.spoken[speech.spoken.length - 1];
+  assert(guidance.voice === voiceZero && guidance.rate === 0.96 && guidance.pitch === 1, 'Rabbit dialogue inherited an animal voice or profile');
+  game.G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'carrot', wobble: 0 }];
+  game.tap(100, 300); game.advance(400);
+  guidance = speech.spoken[speech.spoken.length - 1];
+  assert(guidance.text === '하나' && guidance.voice === voiceZero && guidance.rate === 0.96 && guidance.pitch === 1 && guidance.volume === 0.65, 'Counting inherited an animal voice or profile');
+}
+
+// Temporary loss of local voices must not mix personal speech with remote assignments.
+{
+  const localA = { name: 'Local A', voiceURI: 'mock.local.a', lang: 'ko-KR', localService: true };
+  const localB = { ...localA, name: 'Local B', voiceURI: 'mock.local.b' };
+  const localZero = { ...localA, name: 'Local 0', voiceURI: 'mock.local.zero' };
+  const remoteA = { name: 'Remote A', voiceURI: 'mock.remote.a', lang: 'ko-KR', localService: false };
+  const remoteB = { ...remoteA, name: 'Remote B', voiceURI: 'mock.remote.b' };
+  const remoteZero = { ...remoteA, name: 'Remote 0', voiceURI: 'mock.remote.zero' };
+  const speech = speechMock([remoteA, localB, localA, remoteB]);
+  const game = createGame(390, 844, 81, true, { speech, storage: { 'moon-rabbit-play-name': '별이' } });
+  game.start();
+  const greeting = () => {
+    finishSpeech(speech); game.advance(1100);
+    const utterance = tapFriendGreeting(game, speech, 'penguin', '별이야');
+    assertFriendVoice(utterance, 'penguin');
+    return utterance;
+  };
+  assert(greeting().voice === localB, 'Named animal dialogue did not use its local speaker assignment');
+  speech.change([remoteB, remoteA]);
+  let utterance = greeting();
+  assert(utterance.voice === remoteB && utterance.text.startsWith('친구야 '), 'Remote fallback lost the animal speaker or exposed the nickname');
+  speech.change([localZero, remoteA, localA, localB, remoteB]);
+  utterance = greeting();
+  assert(utterance.voice === localB && utterance.text.startsWith('별이야 '), 'Returning local voices lost the earlier local assignment');
+  speech.change([remoteZero, remoteB, remoteA]);
+  utterance = greeting();
+  assert(utterance.voice === remoteB && utterance.text.startsWith('친구야 '), 'General voice assignment was overwritten by the local assignment');
+  assert(speech.spoken.every(value => !value.text.includes('별이') || value.voice.localService === true), 'Nickname reached a remote or implicit voice during list changes');
 }
 
 // Animal chatter waits for instructions, deliveries and the protected counting beat.
@@ -849,6 +958,7 @@ for (const [scenario, voices, namedSpeech, failVoices] of [
   const game = createGame(390, 844, 65, true, { speech, storage });
   game.start(); finishSpeech(speech);
   const reply = tapFriendGreeting(game, speech, 'fox', '별이야');
+  assertFriendVoice(reply, 'fox');
   assert(game.G.feedback.includes('별이야 '), 'Saved nickname was missing from visual dialogue: ' + scenario);
   assert(reply.text.startsWith(namedSpeech ? '별이야 ' : '친구야 '), 'Nickname speech did not respect the local-only boundary: ' + scenario);
   if (namedSpeech) assert(reply.voice === localKorean, 'Named dialogue used a remote or unspecified voice');
@@ -1060,4 +1170,4 @@ for (const draft of ['123💫<>_', '']) {
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 12-animal dialogue variety and counting protection, nickname storage, draft/save feedback, start autosave and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 12-animal dialogue and voice profiles, stable speaker families and counting protection, nickname storage, draft/save feedback, start autosave and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
