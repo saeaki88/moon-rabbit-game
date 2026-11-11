@@ -413,7 +413,7 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   assert(game.gains.length - gainsBefore <= 3, 'Stale BGM scheduled a backlog of notes');
 }
 
-// Speech is optional, uses only a local Korean voice, and never changes a game action.
+// Speech is optional, prefers local Korean voices, and never changes a game action.
 {
   const game = createGame(390, 844, 8, false);
   game.start();
@@ -435,18 +435,82 @@ function speechMock(voices = []) {
   };
 }
 const localKorean = { name: 'Local Korean', lang: 'ko-KR', localService: true };
-{
-  const remoteKorean = { name: 'Remote Korean', lang: 'ko-KR', localService: false, default: true };
-  const localEnglish = { name: 'Local English', lang: 'en-US', localService: true, default: true };
-  const speech = speechMock([remoteKorean, localEnglish]);
+const remoteKorean = { name: 'Remote Korean', lang: 'ko-KR', localService: false, default: true };
+const unknownKorean = { name: 'Korean without service metadata', lang: 'ko_KR' };
+const localEnglish = { name: 'Local English', lang: 'en-US', localService: true, default: true };
+for (const [voices, expected] of [
+  [[remoteKorean, localEnglish, localKorean], localKorean],
+  [[remoteKorean, localEnglish], remoteKorean],
+  [[unknownKorean, localEnglish], unknownKorean],
+  [[localEnglish], undefined],
+  [[], undefined],
+]) {
+  const speech = speechMock(voices);
   const game = createGame(390, 844, 1, true, { speech });
   game.start();
-  assert(speech.spoken.length === 0 && game.G.carrots.length === 1, 'Missing local Korean voice broke play or used a fallback');
-  speech.change([remoteKorean, localKorean, localEnglish]);
-  assert(speech.spoken.length === 1 && speech.spoken[0].voice === localKorean, 'Late local Korean voice was not selected');
-  assert(speech.spoken[0].text === '당근 한 개 주세요', 'Initial request did not use spoken Korean quantity');
+  assert(speech.spoken.length === 1 && game.G.carrots.length === 1, 'Voice selection prevented the initial spoken request');
+  const first = speech.spoken[0];
+  assert(first.voice === expected, 'Voice selection did not prefer local Korean or assigned a foreign voice');
+  assert(first.lang === (expected ? expected.lang : 'ko-KR'), 'Unspecified-voice fallback did not request Korean');
+  assert(first.text === '당근 한 개 주세요', 'Initial request did not use spoken Korean quantity');
+  assert(speech.cancellations === 0, 'Starting an idle speech engine issued an unnecessary cancel');
+}
+
+// iOS-like unlock: the first speak must occur synchronously inside the start gesture.
+{
+  const speech = speechMock();
+  speech.inGesture = false;
+  speech.unlocked = false;
+  speech.blocked = 0;
+  const normalSpeak = speech.speak;
+  speech.speak = function (utterance) {
+    if (!this.unlocked && !this.inGesture) { this.blocked++; return; }
+    this.unlocked = true;
+    normalSpeak.call(this, utterance);
+  };
+  const game = createGame(390, 844, 11, true, { speech });
+  speech.inGesture = true;
+  game.start();
+  speech.inGesture = false;
+  assert(speech.unlocked && speech.spoken.length === 1, 'Empty voice list missed the synchronous start-gesture speech opportunity');
+  assert(speech.spoken[0].voice === undefined && speech.spoken[0].lang === 'ko-KR', 'Initial iOS-style request did not use the Korean language fallback');
+  speech.change([localEnglish]);
+  assert(speech.spoken.length === 1, 'A foreign voice list retried the pending Korean fallback');
   speech.change([localKorean]);
-  assert(speech.spoken.length === 1, 'Voice list update repeated an already spoken request');
+  assert(speech.blocked === 0 && speech.spoken.length === 2 && speech.spoken[1].voice === localKorean, 'Late Korean voice could not speak after the start gesture unlocked speech');
+  speech.change([localKorean]);
+  assert(speech.spoken.length === 2, 'Pending fallback was retried more than once');
+  speech.spoken[1].onstart(); speech.spoken[1].onend();
+  speech.change([remoteKorean, localKorean]);
+  assert(speech.spoken.length === 2, 'Completed guidance was repeated by a voice-list refresh');
+}
+
+// A fallback that starts or finishes, including synchronous callbacks, must not be retried.
+for (const phase of ['start', 'end', 'sync-start', 'sync-end']) {
+  const speech = speechMock();
+  const normalSpeak = speech.speak;
+  if (phase.startsWith('sync-')) speech.speak = function (utterance) {
+    normalSpeak.call(this, utterance);
+    utterance.onstart();
+    if (phase === 'sync-end') utterance.onend();
+  };
+  const game = createGame(390, 844, 12, true, { speech });
+  game.start();
+  const first = speech.spoken[0];
+  if (phase === 'start') first.onstart();
+  if (phase === 'end') first.onend();
+  speech.change([localKorean]);
+  assert(speech.spoken.length === 1, 'An already started or completed fallback repeated after ' + phase);
+}
+{
+  const speech = speechMock();
+  const game = createGame(390, 844, 13, true, { speech });
+  game.start();
+  speech.spoken[0].onerror();
+  speech.change([unknownKorean]);
+  assert(speech.spoken.length === 2 && speech.spoken[1].voice === unknownKorean, 'An unstarted fallback error lost its one late-Korean retry');
+  speech.change([localKorean]);
+  assert(speech.spoken.length === 2, 'Fallback-error recovery retained another pending retry');
 }
 
 // A delayed voice must not revive an instruction after the child acts or leaves.
@@ -454,6 +518,7 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   const speech = speechMock();
   const game = createGame(390, 844, 2, true, { speech });
   game.start(); game.advance(200);
+  assert(speech.spoken.length === 1, 'Initial language fallback was skipped');
   if (action === 'pickup' || action === 'next-request') {
     const item = game.G.carrots[0];
     game.tap(item.x, item.y);
@@ -463,19 +528,21 @@ for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request
   if (action === 'home') game.click('home-button');
   if (action === 'hidden') game.visibility(true);
   if (action === 'mute') game.sound.click();
+  const beforeChange = speech.spoken.length;
   speech.change([localKorean]);
-  assert(speech.spoken.length === 0, 'Late voice revived the initial request after ' + action);
+  assert(speech.spoken.length === beforeChange, 'Late voice revived the initial request after ' + action);
   if (action === 'pickup') {
     game.advance(400);
-    assert(game.G.score === 1, 'Silent guidance prevented delivery');
+    assert(game.G.score === 1, 'Language fallback prevented delivery');
   }
 }
 {
   const speech = speechMock();
   const game = createGame(390, 844, 3, true, { speech });
   game.start(); game.click('home-button'); game.start();
+  assert(speech.spoken.length === 2, 'A restarted game did not make its own initial fallback');
   speech.change([localKorean]);
-  assert(speech.spoken.length === 1, 'Restart retained multiple pending instructions');
+  assert(speech.spoken.length === 3 && speech.spoken[2].voice === localKorean, 'Restart retained an old pending instruction or lost the current one');
 }
 
 // Picture-card taps repeat guidance without collecting, and old callbacks cannot change new audio.
@@ -647,18 +714,23 @@ for (const mode of ['muted', 'unavailable']) {
   assert(JSON.stringify([G.feedback, G.hintUntil, G.rabbit.bounce, G.dimming, G.particles]) === endingState && speech.spoken.length === endingSpeech && G.score === 14, 'Ending dialogue changed the flying scene');
 }
 
-// Missing audio hardware and speech failures leave the visual game usable.
+// Missing audio hardware and speech failures leave the visual game usable and retryable.
 {
   const speech = speechMock([localKorean]); speech.failVoices = true;
   const game = createGame(390, 844, 6, true, { speech }); game.start();
-  assert(game.G.started && speech.spoken.length === 0, 'Voice enumeration failure blocked start');
+  assert(game.G.started && speech.spoken.length === 1 && speech.spoken[0].voice === undefined && speech.spoken[0].lang === 'ko-KR', 'Voice enumeration failure did not use the language fallback');
+  speech.spoken[0].onstart();
   speech.failVoices = false; speech.failSpeak = true;
-  game.tap(30, 30);
+  game.advance(1100); game.tap(30, 30);
   assert(game.gains[0].gain.value === 1, 'Speech failure left existing audio lowered');
   speech.failSpeak = false; game.tap(30, 30);
-  assert(speech.spoken.length === 1, 'Speech failed to recover after a blocked call');
-  speech.spoken[0].onstart(); speech.spoken[0].onerror();
+  assert(speech.spoken.length === 2, 'Speech failed to recover immediately after a blocked call');
+  speech.spoken[1].onstart(); speech.spoken[1].onerror();
   assert(game.gains[0].gain.value === 1, 'Speech error failed to restore audio');
+  game.tap(30, 30);
+  assert(speech.spoken.length === 3 && speech.spoken[2].text === speech.spoken[1].text, 'Speech error left the same-text cooldown locked');
+  speech.spoken[2].onstart(); speech.spoken[1].onerror();
+  assert(game.gains[0].gain.value === 0.25, 'Stale speech error changed the replacement utterance');
   const noAudioSpeech = speechMock([localKorean]);
   const noAudio = createGame(390, 844, 7, false, { speech: noAudioSpeech });
   noAudio.start(); noAudioSpeech.spoken[0].onstart(); noAudioSpeech.spoken[0].onend();
@@ -703,4 +775,4 @@ for (const mode of ['muted', 'unavailable']) {
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, optional local Korean speech, remaining-quantity rabbit dialogue, picture-card guidance, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, picture-card guidance, HiDPI, motion and particle regressions');

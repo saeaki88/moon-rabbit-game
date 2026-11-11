@@ -421,15 +421,18 @@
     return guidanceSynth && G.started && G.soundEnabled && !G.paused && !document.hidden && !G.ending;
   }
 
-  function localKoreanVoice() {
+  function koreanVoice() {
     if (!guidanceSynth) return null;
     try {
-      const voices = guidanceSynth.getVoices().filter(voice => voice.localService === true && /^ko(?:[-_]|$)/i.test(voice.lang));
-      return voices.find(voice => voice.default) || voices[0] || null;
+      const voices = guidanceSynth.getVoices().filter(voice => /^ko(?:[-_]|$)/i.test(voice.lang));
+      return voices.find(voice => voice.localService === true && voice.default) ||
+        voices.find(voice => voice.localService === true) ||
+        voices.find(voice => voice.default) || voices[0] || null;
     } catch (_) { return null; }
   }
 
   function cancelGuidance() {
+    const hadUtterance = !!guidanceUtterance;
     guidanceGeneration++;
     pendingRequestGuidance = null;
     guidanceUtterance = null;
@@ -437,44 +440,57 @@
     lastGuidanceText = '';
     lastGuidanceAt = -Infinity;
     if (guidanceSynth) {
-      try { guidanceSynth.cancel(); } catch (_) {}
+      try {
+        if (hadUtterance || guidanceSynth.speaking || guidanceSynth.pending) guidanceSynth.cancel();
+      } catch (_) {}
     }
     applyMasterGain();
   }
 
-  function speakGuidance(text) {
+  function speakGuidance(text, allowPendingRequest = false) {
     const now = performance.now();
     if (canSpeakGuidance() && text === lastGuidanceText && now - lastGuidanceAt < 1000) return true;
     cancelGuidance();
     if (!canSpeakGuidance()) return false;
-    const voice = localKoreanVoice();
-    // No default or remote voice fallback: pictures remain the primary guide.
-    if (!voice) return false;
+    const voice = koreanVoice();
     const generation = guidanceGeneration;
     try {
       const utterance = new GuidanceUtterance(text);
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
+      // Speak during the initial tap even before iOS has populated its voice list.
+      if (voice) utterance.voice = voice;
+      utterance.lang = voice ? voice.lang : 'ko-KR';
       utterance.rate = 0.88;
       utterance.pitch = 1;
       utterance.volume = 0.65;
       utterance.onstart = () => {
         if (generation !== guidanceGeneration) return;
+        pendingRequestGuidance = null;
         if (!canSpeakGuidance()) { cancelGuidance(); return; }
         guidanceDucked = true;
         applyMasterGain();
       };
       const finish = () => {
         if (generation !== guidanceGeneration) return;
+        pendingRequestGuidance = null;
         guidanceUtterance = null;
         guidanceDucked = false;
         applyMasterGain();
       };
       utterance.onend = finish;
-      utterance.onerror = finish;
+      utterance.onerror = () => {
+        if (generation !== guidanceGeneration) return;
+        guidanceUtterance = null;
+        guidanceDucked = false;
+        lastGuidanceText = '';
+        lastGuidanceAt = -Infinity;
+        applyMasterGain();
+      };
       guidanceUtterance = utterance;
       lastGuidanceText = text;
       lastGuidanceAt = now;
+      if (!voice && allowPendingRequest) {
+        pendingRequestGuidance = { generation, index: G.requestIndex, score: G.score };
+      }
       guidanceSynth.speak(utterance);
       return true;
     } catch (_) {
@@ -488,9 +504,7 @@
     const request = currentRequest();
     const quantity = ['', '한', '두', '세'][request.count];
     const text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개 주세요';
-    if (!speakGuidance(text) && allowPending && canSpeakGuidance() && !localKoreanVoice()) {
-      pendingRequestGuidance = { generation: guidanceGeneration, index: G.requestIndex, score: G.score };
-    }
+    speakGuidance(text, allowPending);
   }
 
   function talkRabbit() {
@@ -521,7 +535,11 @@
         pendingRequestGuidance = null;
         return;
       }
-      speakRequest(true);
+      if (koreanVoice()) {
+        lastGuidanceText = '';
+        lastGuidanceAt = -Infinity;
+        speakRequest();
+      }
     });
   }
 
