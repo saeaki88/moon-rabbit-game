@@ -289,8 +289,11 @@
     clock: 0,
     paused: false,
     reducedMotion: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches),
-    basket: [],
-    feedback: '채소를 톡 눌러요',
+    requestIndex: 0,
+    requestItems: [],
+    requestReadyAt: 0,
+    hintUntil: 0,
+    feedback: '같은 그림을 찾아요',
     carrots: [],
     flyingCarrots: [],
     particles: [],
@@ -374,7 +377,22 @@
     leopardCat: '삵', squid: '오징어', duck: '오리', tiger: '호랑이', sunBear: '말레이곰',
     chick: '병아리', cat: '고양이',
   };
-  const COUNT_WORDS = ['함께 세어요', '하나', '둘', '셋', '넷', '다섯'];
+  const COUNT_WORDS = ['하나씩 주세요', '하나', '둘', '셋'];
+  const VEGETABLE_NAMES = { carrot: '당근', cucumber: '오이' };
+  // Each request combines picture matching with a quantity from one to three.
+  const REQUESTS = [
+    { type: 'carrot', count: 1 },
+    { type: 'cucumber', count: 2 },
+    { type: 'carrot', count: 3 },
+    { type: 'cucumber', count: 2 },
+    { type: 'carrot', count: 3 },
+    { type: 'cucumber', count: 3 },
+  ];
+  function currentRequest() { return REQUESTS[G.requestIndex]; }
+  function requestLabel() {
+    const request = currentRequest();
+    return VEGETABLE_NAMES[request.type] + ' ' + request.count + '개 주세요';
+  }
 
   function syncPanels() {
     welcomePanel.hidden = G.started;
@@ -385,7 +403,7 @@
 
   function setFeedback(text) {
     G.feedback = text;
-    learningStatus.textContent = text;
+    learningStatus.textContent = requestLabel() + '. ' + text;
   }
 
   function setPaused(paused) {
@@ -570,6 +588,7 @@
     }
     // Resizing must not leave a tappable vegetable under a newly positioned friend.
     G.carrots = G.carrots.filter(c => veggieSpotFree(c.x, c.y, c.size, c));
+    if (G.carrots.length && !G.carrots.some(c => c.type === currentRequest().type)) G.carrots = [];
   }
 
   function clampFlight(name, position, scale = G.ending ? G.endingLayout.scale : 1) {
@@ -2396,9 +2415,9 @@
   function veggieSpotFree(x, y, size, ignore) {
     const radius = veggieHitRadius(size);
     if (x < radius + 8 || x > viewport.width - radius - 8 || y < Math.max(84, radius + 8) || y > G.groundY - radius) return false;
-    // Leave the counting basket unobstructed, including the vegetable's hit area.
-    const basketBottom = viewport.height <= 480 ? 84 : 116;
-    if (x < Math.min(230, viewport.width - 140) + 12 + radius && y < basketBottom + radius) return false;
+    // Leave the request visible, including the vegetable's hit area.
+    const requestBottom = viewport.height <= 480 ? 84 : 116;
+    if (x < Math.min(230, viewport.width - 140) + 12 + radius && y < requestBottom + radius) return false;
     if (Math.hypot(x - G.moonX, y - G.moonY) < G.moonR + radius + 8) return false;
     if (Math.hypot(x - G.rabbit.x, y - G.rabbit.y) < radius + G.rabbit.size) return false;
     for (const name of CHARACTER_NAMES) {
@@ -2413,8 +2432,8 @@
       G.flyingCarrots.every(c => Math.hypot(x - c.sx, y - c.sy) > radius + veggieHitRadius(c.size) + 8);
   }
 
-  function spawnCarrot() {
-    if (G.ending || G.endingPending || G.carrots.length >= 1 || G.score + G.flyingCarrots.length >= CARROT_GOAL) return;
+  function spawnCarrot(type) {
+    if (G.ending || G.endingPending || G.requestReadyAt || G.carrots.length >= 2 || G.score + G.flyingCarrots.length >= CARROT_GOAL) return;
     const size = Math.min(viewport.width, viewport.height) * (viewport.height <= 480 ? 0.075 : 0.09);
     const margin = veggieHitRadius(size) + 8;
     const minY = Math.max(84, margin);
@@ -2435,8 +2454,17 @@
       }
     }
     if (!spot) { G.lastCarrotTime = G.clock; return; }
-    const type = Math.random() < 0.5 ? 'cucumber' : 'carrot';
     G.carrots.push({ ...spot, size, scale: 0, wobble: Math.random() * Math.PI * 2, type });
+  }
+
+  function spawnChoices() {
+    if (G.carrots.length || G.flyingCarrots.length || G.requestReadyAt) return;
+    // Always place the requested item first: a crowded viewport must remain playable.
+    const type = currentRequest().type;
+    spawnCarrot(type);
+    if (G.carrots.length && G.requestIndex > 0) {
+      spawnCarrot(type === 'carrot' ? 'cucumber' : 'carrot');
+    }
   }
 
   // ===== Flying Carrot Animation =====
@@ -2485,15 +2513,14 @@
     });
   }
 
-  // ===== Counting Basket =====
+  // ===== The Rabbit's Request =====
   function drawScore() {
     const x = 12, y = 12, width = Math.min(230, viewport.width - 140);
     const compact = viewport.height <= 480;
     const height = compact ? 64 : 102;
     const rowY = compact ? 32 : 53;
-    const count = G.basket.length;
-    const basketNumber = Math.max(0, Math.floor((G.score - 1) / 5));
-    const slots = basketNumber === 2 ? 4 : 5;
+    const count = G.requestItems.length;
+    const request = currentRequest();
     ctx.fillStyle = 'rgba(15, 31, 50, 0.94)';
     ctx.beginPath();
     ctx.moveTo(x + 16, y);
@@ -2510,19 +2537,22 @@
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.font = `${compact ? 13 : 16}px -apple-system, sans-serif`;
-    ctx.fillText(G.feedback, x + 12, y + (compact ? 12 : 21), width - 24);
+    ctx.fillText(requestLabel(), x + 12, y + (compact ? 12 : 21), width - 24);
     ctx.font = `bold ${compact ? 22 : 28}px -apple-system, sans-serif`;
     ctx.fillText(String(count), x + 14, y + rowY);
-    const spacing = (width - 58) / 5;
-    for (let i = 0; i < slots; i++) {
-      const px = x + 51 + i * spacing;
-      circle(px, y + rowY, 9, '#32495b');
-      if (i < count) drawVeggieShape(G.basket[i], px, y + rowY, Math.min(15, spacing * 0.62), 0);
+    ctx.font = '12px -apple-system, sans-serif';
+    ctx.fillText('개', x + 33, y + rowY + 3);
+    const spacing = (width - 96) / 2;
+    for (let i = 0; i < request.count; i++) {
+      const px = x + 72 + i * spacing;
+      circle(px, y + rowY, compact ? 11 : 16, '#32495b');
+      ctx.globalAlpha = i < count ? 1 : 0.45;
+      drawVeggieShape(request.type, px, y + rowY, compact ? 22 : 30, 0);
+      ctx.globalAlpha = 1;
     }
     ctx.fillStyle = '#c5d4dd';
     ctx.font = `${compact ? 12 : 14}px -apple-system, sans-serif`;
-    const label = ['첫 바구니', '두 번째 바구니', '마지막 바구니'][basketNumber];
-    ctx.fillText(label + ' · ' + COUNT_WORDS[count], x + 12, y + height - (compact ? 11 : 18), width - 24);
+    ctx.fillText(G.feedback, x + 12, y + height - (compact ? 11 : 18), width - 24);
   }
 
   // ===== Fly to Moon Logic =====
@@ -2677,8 +2707,11 @@
   function resetGame() {
     G.score = 0;
     G.clock = 0;
-    G.basket = [];
-    setFeedback('채소를 톡 눌러요');
+    G.requestIndex = 0;
+    G.requestItems = [];
+    G.requestReadyAt = 0;
+    G.hintUntil = 0;
+    setFeedback('같은 그림을 찾아요');
     G.ending = false;
     G.endingPending = false;
     G.endingStartAt = 0;
@@ -2703,22 +2736,22 @@
     });
     layout();
     G.lastCarrotTime = G.clock;
-    spawnCarrot();
+    spawnChoices();
   }
 
   // ===== Game Logic =====
   function onCarrotEaten(type) {
-    if (G.ending || G.endingPending || G.score >= CARROT_GOAL) return;
+    const request = currentRequest();
+    if (G.ending || G.endingPending || G.score >= CARROT_GOAL || type !== request.type || G.requestItems.length >= request.count) return;
     const r = G.rabbit;
     r.eating = 1;
     r.happy = 3;
     r.bounce = 1;
     G.score++;
-    if (G.basket.length === 5) G.basket = [];
-    G.basket.push(type || 'carrot');
-    const vegetableName = type === 'cucumber' ? '초록 오이' : '주황 당근';
-    setFeedback(G.basket.length === 5 ? '다섯! 바구니가 찼어요' : vegetableName);
-    learningStatus.textContent = vegetableName + ', ' + COUNT_WORDS[G.basket.length] + '. 토끼와 나눴어요.';
+    G.requestItems.push(type);
+    const complete = G.requestItems.length === request.count;
+    setFeedback(COUNT_WORDS[G.requestItems.length] + (complete ? '! 고마워요' : ' 줬어요'));
+    G.hintUntil = 0;
     spawnParticles(r.x, r.y - r.size * 0.3, 3, 'heart');
 
     G.characterOrder.forEach((name, i) => {
@@ -2730,8 +2763,10 @@
       G.endingStartAt = G.clock + 1200;
       G.carrots = [];
       G.spawnTimes = [];
+    } else if (complete) {
+      G.requestReadyAt = G.clock + 1800;
     }
-    G.lastCarrotTime = G.clock + (G.basket.length === 5 ? 1200 : 0);
+    G.lastCarrotTime = G.clock;
   }
 
   function handleTap(px, py) {
@@ -2744,10 +2779,16 @@
       if (c.scale < 0.35) continue;
       const dist = Math.hypot(px - c.x, py - c.y);
       if (dist < veggieHitRadius(c.size) && G.score + G.flyingCarrots.length < CARROT_GOAL) {
+        if (c.type !== currentRequest().type) {
+          setFeedback(VEGETABLE_NAMES[currentRequest().type] + ' 찾기!');
+          G.hintUntil = G.clock + 1600;
+          return;
+        }
         playPop();
         spawnParticles(c.x, c.y, 3, 'star');
         G.flyingCarrots.push({ sx: c.x, sy: c.y, size: c.size, t: 0, type: c.type });
-        G.carrots.splice(i, 1);
+        // One delivery per beat; never strand the next correct choice behind a leftover item.
+        G.carrots = [];
         return;
       }
     }
@@ -2840,9 +2881,21 @@
       updateParticles(dt);
       return;
     }
+    if (G.requestReadyAt) {
+      if (now >= G.requestReadyAt) {
+        G.requestIndex++;
+        G.requestItems = [];
+        G.requestReadyAt = 0;
+        G.hintUntil = 0;
+        setFeedback('이번엔 ' + VEGETABLE_NAMES[currentRequest().type] + '!');
+        spawnChoices();
+      }
+      updateParticles(dt);
+      return;
+    }
     const scheduled = G.spawnTimes.filter(time => time <= now);
     G.spawnTimes = G.spawnTimes.filter(time => time > now);
-    scheduled.forEach(() => spawnCarrot());
+    scheduled.forEach(() => spawnChoices());
 
     if (G.celebrating > 0) {
       G.celebrating -= dt;
@@ -2852,8 +2905,7 @@
 
     if (G.carrots.length === 0 && G.flyingCarrots.length === 0 && !G.ending) {
       if (now - G.lastCarrotTime > G.carrotDelay) {
-        spawnCarrot();
-
+        spawnChoices();
       }
     }
 
@@ -2898,6 +2950,13 @@
       circle(0, 0, c.size * 0.7, glowColor);
       ctx.globalAlpha = 1;
       drawVeggieShape(c.type || 'carrot', 0, 0, c.size * 1.35, G.reducedMotion ? 0 : c.wobble);
+      if (G.hintUntil > G.clock && c.type === currentRequest().type) {
+        ctx.strokeStyle = C.moon;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, c.size, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
     });
 

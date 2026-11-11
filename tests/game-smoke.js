@@ -5,6 +5,12 @@ const source = typeof readFile === 'function'
   ? readFile('game.js')
   : require('node:fs').readFileSync('game.js', 'utf8');
 const log = typeof print === 'function' ? print : console.log;
+const requests = [
+  { type: 'carrot', count: 1 }, { type: 'cucumber', count: 2 },
+  { type: 'carrot', count: 3 }, { type: 'cucumber', count: 2 },
+  { type: 'carrot', count: 3 }, { type: 'cucumber', count: 3 },
+];
+const requestTotals = [1, 3, 6, 8, 11, 14];
 const friends = ['turtle', 'penguin', 'fox', 'brownBear', 'lion', 'leopardCat', 'squid', 'duck', 'tiger', 'sunBear', 'chick', 'cat'];
 new Function(source);
 
@@ -23,6 +29,7 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   const storage = options.storage || {};
   const gains = [];
   const destinations = [];
+  const drawnText = [];
   Math.random = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 4294967296;
@@ -34,6 +41,7 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   ['beginPath', 'closePath', 'ellipse', 'arc', 'fill', 'stroke', 'fillRect', 'fillText',
     'translate', 'scale', 'rotate', 'moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'setTransform']
     .forEach(name => { ctx[name] = numeric; });
+  ctx.fillText = (...args) => { numeric(...args); drawnText.push(String(args[0])); };
   ctx.save = () => { saveDepth++; };
   ctx.restore = () => { assert(--saveDepth >= 0, 'Unbalanced Canvas restore'); };
   ctx.createLinearGradient = (...args) => { numeric(...args); return { addColorStop: numeric }; };
@@ -82,7 +90,7 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   const marker = '  requestAnimationFrame(loop);\n})();';
   assert(source.includes(marker), 'Test cannot inspect the game IIFE');
   // Expose state only in this temporary evaluation, never in the shipped game.
-  new Function(source.replace(marker, '  globalThis.__smokeState = G; globalThis.__smokeApi = {scheduleBGM, updateParticles, spawnParticles, draw, drawFlyingCarrots, flightPos};\n' + marker))();
+  new Function(source.replace(marker, '  globalThis.__smokeState = G; globalThis.__smokeApi = {scheduleBGM, updateParticles, spawnParticles, draw, drawFlyingCarrots, flightPos, currentRequest, requestLabel};\n' + marker))();
   const G = globalThis.__smokeState;
   function step(ms = 50) {
     now += ms;
@@ -103,7 +111,7 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   const click = id => element(id).click();
   const visibility = hidden => { document.hidden = hidden; documentEvents.visibilitychange(); };
   return { G, step, advance, tap, resize, sound, gains, destinations, canvas, elements, contexts,
-    start, click, visibility, storage, media, api: globalThis.__smokeApi };
+    start, click, visibility, storage, media, drawnText, api: globalThis.__smokeApi };
 
 }
 
@@ -128,24 +136,33 @@ function runEnding(width, height, ending, seed) {
   const vegetableTypes = new Set();
   const thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   for (let score = 1; score <= 14; score++) {
-    for (let attempts = 0; !G.carrots.length && attempts < 80; attempts++) step();
-    assert(G.carrots.length > 0, 'No reachable vegetable spawned');
+    const expectedIndex = requestTotals.findIndex(total => score <= total);
+    const expected = requests[expectedIndex];
+    for (let attempts = 0; !G.carrots.some(c => c.type === expected.type) && attempts < 80; attempts++) step();
+    assert(G.requestIndex === expectedIndex, 'Request order skipped or failed to advance');
+    assert(game.api.currentRequest().type === expected.type && game.api.currentRequest().count === expected.count, 'Request goal changed');
+    assert(G.carrots.some(c => c.type === expected.type), 'No reachable requested vegetable spawned');
+    assert(G.carrots.length <= 2, 'Too many choices shown');
+    if (G.carrots.length === 2) {
+      const [one, two] = G.carrots;
+      assert(one.type !== two.type, 'Matching task offered duplicate choices');
+      const separation = Math.max(28, one.size * 1.55) + Math.max(28, two.size * 1.55) + 8;
+      assert(Math.hypot(one.x - two.x, one.y - two.y) > separation, 'Choice touch areas overlap');
+    }
     advance(150);
-    const item = G.carrots[0];
+    const item = G.carrots.find(c => c.type === expected.type);
     vegetableTypes.add(item.type);
     // Exercise the enlarged hit area, outside the old 1.3x radius.
     tap(item.x + item.size * 1.4, item.y);
     assert(G.flyingCarrots.some(f => f.type === item.type), 'Vegetable pickup failed or lost its type');
     advance(400);
     assert(G.score === score, 'Score did not advance exactly once');
-    assert(G.basket.length === (score - 1) % 5 + 1 && G.basket[G.basket.length - 1] === item.type, 'Counting basket lost quantity or vegetable type');
+    const expectedCount = score - (requestTotals[expectedIndex - 1] || 0);
+    assert(G.requestItems.length === expectedCount && G.requestItems.every(type => type === expected.type), 'Request lost quantity or accepted the wrong vegetable');
+    if (expectedCount === expected.count && score < 14) {
+      assert(G.requestReadyAt > G.clock && G.carrots.length === 0, 'Completed request did not leave time to inspect the quantity');
+    } else assert(!G.requestReadyAt, 'Incomplete or final request scheduled a new request');
     assert(friends.filter(name => G[name].visible).length === thresholds.filter(n => n <= score).length, 'Incorrect friend progression');
-    for (let a = 0; a < G.carrots.length; a++) {
-      for (let b = a + 1; b < G.carrots.length; b++) {
-        const one = G.carrots[a], two = G.carrots[b];
-        assert(Math.hypot(one.x - two.x, one.y - two.y) > (one.size + two.size) * 1.55, 'Vegetables overlap');
-      }
-    }
   }
   assert(vegetableTypes.size === 2, 'Both vegetable types were not exercised');
   assert(G.brownBear.visible && G.leopardCat.visible && friends.every(name => G[name].visible), 'A new or existing friend missed the ending');
@@ -203,6 +220,7 @@ function runEnding(width, height, ending, seed) {
   assert(friends.every(name => !G[name].visible && G[name].react === 0), 'Replay did not reset all friends');
   assert(G.spawnTimes.length === 0 && G.dimming === 0 && !G.soundEnabled, 'Replay leaked delayed spawns or reset mute');
   assert(G.carrots.length === 1 && new Set(G.characterOrder).size === 12, 'Replay did not restart correctly');
+  assert(G.requestIndex === 0 && G.requestItems.length === 0 && !G.requestReadyAt && !G.hintUntil, 'Replay did not reset the learning request');
   assert(game.destinations.slice(1).every(destination => destination === gains[0]), 'A sound bypassed the mute gain');
   log('PASS ' + width + 'x' + height + ' ' + ending);
 }
@@ -212,21 +230,91 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   sizes.forEach(([width, height], index) => runEnding(width, height, ending, 20261013 + type * 100 + index));
 });
 
-// The last two simultaneous pickups must cap the score at the goal.
+// Fast repeated taps accept only one delivery, and the last request stops at its goal.
 {
-  const { G, tap, advance, start } = createGame(390, 844);
+  const game = createGame(390, 844);
+  const { G, tap, advance, start } = game;
   start();
   G.score = 12;
+  G.requestIndex = 5;
+  G.requestItems = ['cucumber'];
   G.carrots = [
-    { x: 80, y: 300, size: 30, scale: 1, type: 'carrot', wobble: 0 },
-    { x: 195, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 },
-    { x: 310, y: 300, size: 30, scale: 1, type: 'carrot', wobble: 0 },
+    { x: 80, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 },
+    { x: 195, y: 300, size: 30, scale: 1, type: 'carrot', wobble: 0 },
+    { x: 310, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 },
   ];
-  tap(80, 300); tap(195, 300); tap(310, 300);
-  assert(G.flyingCarrots.length === 2, 'Accepted more than the remaining goal');
-  G.spawnTimes.push(100);
+  tap(80, 300); tap(195, 300); tap(310, 300); tap(80, 300);
+  assert(G.flyingCarrots.length === 1 && G.carrots.length === 0, 'Rapid tapping accepted multiple deliveries');
   advance(400);
-  assert(G.score === 14 && G.endingPending && G.spawnTimes.length === 0, 'Rapid goal or delayed-spawn cancellation failed');
+  assert(G.score === 13 && G.requestItems.length === 2 && !G.endingPending, 'One delivery changed the count more than once');
+  advance(1200);
+  const last = G.carrots.find(c => c.type === 'cucumber');
+  assert(last, 'Last requested vegetable did not return');
+  tap(last.x, last.y); tap(last.x, last.y);
+  G.spawnTimes.push(G.clock + 100);
+  advance(400);
+  assert(G.score === 14 && G.requestItems.length === 3 && G.endingPending && G.spawnTimes.length === 0, 'Final request overflowed or kept delayed spawning');
+}
+
+// A different choice gives a quiet hint without consuming progress or replacing the goal.
+{
+  const game = createGame(390, 844);
+  const { G, tap, advance, start, api, gains, drawnText } = game;
+  start(); advance(200);
+  const first = G.carrots[0];
+  tap(first.x, first.y); advance(400); advance(1800); advance(150);
+  assert(G.requestIndex === 1 && G.requestItems.length === 0, 'Tutorial did not advance to the matching request');
+  const wrong = G.carrots.find(c => c.type === 'carrot');
+  const correct = G.carrots.find(c => c.type === 'cucumber');
+  assert(wrong && correct, 'The spacious screen did not offer two different choices');
+  const label = api.requestLabel(), particles = JSON.stringify(G.particles), soundNodes = gains.length;
+  tap(wrong.x, wrong.y); tap(wrong.x, wrong.y);
+  assert(G.score === 1 && G.requestItems.length === 0 && G.flyingCarrots.length === 0, 'Wrong choice changed progress');
+  assert(G.carrots.includes(wrong) && G.carrots.includes(correct), 'Wrong choice consumed a choice');
+  assert(JSON.stringify(G.particles) === particles && gains.length === soundNodes, 'Wrong choice played a reward or punishment effect');
+  assert(G.hintUntil > G.clock && api.requestLabel() === label, 'Hint lost the requested goal');
+  drawnText.length = 0; api.draw();
+  assert(drawnText.includes(label) && drawnText.includes(G.feedback), 'Hint replaced the persistent request display');
+  tap(G.rabbit.x, G.rabbit.y);
+  drawnText.length = 0; api.draw();
+  assert(api.requestLabel() === label && drawnText.includes(label), 'Character feedback replaced the request');
+  tap(correct.x, correct.y); advance(400);
+  assert(G.score === 2 && G.requestItems.length === 1 && !G.hintUntil, 'Correct choice after a hint did not count once');
+  advance(1200);
+  assert(G.carrots.some(c => c.type === 'cucumber'), 'Leftover wrong choice blocked the next correct item');
+}
+
+// Completed requests wait through a pause before the next named goal appears.
+{
+  const game = createGame(390, 844);
+  const { G, tap, advance, start, click, api } = game;
+  start(); advance(200);
+  const first = G.carrots[0];
+  tap(first.x, first.y); advance(400);
+  const deadline = G.requestReadyAt, label = api.requestLabel();
+  assert(deadline > G.clock && G.requestItems.length === 1, 'Completed first request was not retained');
+  click('pause-toggle'); advance(5000); click('resume-button');
+  assert(G.requestReadyAt === deadline && G.requestIndex === 0 && api.requestLabel() === label, 'Pause consumed the request transition');
+  advance(1000);
+  assert(G.requestIndex === 0 && G.requestItems.length === 1, 'Completed request disappeared too early');
+  advance(800);
+  assert(G.requestIndex === 1 && G.requestItems.length === 0 && !G.requestReadyAt, 'Next request did not reset just its own count');
+  assert(api.requestLabel() !== label && G.carrots.some(c => c.type === 'cucumber'), 'Next request did not announce and offer its item');
+}
+
+// Rotation must not strand only the distractor after the requested item is removed.
+{
+  const game = createGame(844, 390);
+  const { G, start, resize, advance } = game;
+  start();
+  G.requestIndex = 1;
+  G.score = 1;
+  const leftover = { x: 100, y: 210, size: 20, scale: 1, type: 'carrot', wobble: 0 };
+  G.carrots = [leftover, { x: 700, y: 150, size: 20, scale: 1, type: 'cucumber', wobble: 0 }];
+  resize(390, 844);
+  assert(!G.carrots.includes(leftover), 'Rotation retained a distractor without the requested item');
+  advance(1200);
+  assert(G.carrots.some(c => c.type === 'cucumber'), 'Rotation did not restore a reachable requested item');
 }
 
 // Friend touches trigger different feedback without adding score.
@@ -273,7 +361,8 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   visibility(true); advance(1000); visibility(false);
   assert(G.paused && !game.elements['pause-panel'].hidden, 'Hidden tab resumed automatically');
   click('resume-button');
-  G.score = 13; G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'carrot', wobble: 0 }];
+  G.score = 13; G.requestIndex = 5; G.requestItems = ['cucumber', 'cucumber']; G.requestReadyAt = 0;
+  G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 }];
   tap(100, 300); advance(400);
   assert(G.endingPending, 'Goal was not pending');
   click('pause-toggle'); advance(5000); click('resume-button');
@@ -286,7 +375,7 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   advance(5000);
   assert(JSON.stringify([G.endingTime, G.flightRabbit]) === flightBefore, 'Paused flight moved');
   click('home-button');
-  assert(!G.started && !G.paused && !G.ending && G.basket.length === 0, 'Home did not clear the round');
+  assert(!G.started && !G.paused && !G.ending && G.requestItems.length === 0, 'Home did not clear the round');
   assert(game.contexts[0].state === 'closed' && game.gains[0].disconnected, 'Home kept old audio alive');
   start();
   assert(game.contexts.length === 2 && G.carrots.length === 1, 'New round reused old ending audio');
@@ -346,7 +435,7 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   assert(game.canvas.width === 780 && game.canvas.height === 1688, 'HiDPI backing size was not capped at 2');
   const item = game.G.carrots[0];
   game.tap(item.x, item.y); game.advance(400);
-  assert(game.G.score === 1 && game.G.basket[0] === item.type, 'HiDPI touch coordinates drifted');
+  assert(game.G.score === 1 && game.G.requestItems[0] === item.type, 'HiDPI touch coordinates drifted');
   const friend = game.G[game.G.characterOrder[0]];
   assert(friend.enter === 1 && friend.x === friend.targetX, 'Reduced motion kept a large entrance animation');
   assert(game.G.particles.every(p => p.vx === 0 && p.vy === 0), 'Reduced motion kept moving particles');
@@ -356,4 +445,4 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, counting, pause, home, replay, audio lifecycle/storage, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, HiDPI, motion and particle regressions');
