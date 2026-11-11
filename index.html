@@ -2,13 +2,45 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>달토끼의 당근 모으기</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <canvas id="game"></canvas>
-  <button id="sound-toggle" type="button" aria-label="소리 끄기" aria-pressed="false" title="소리 끄기">🔊</button>
+  <canvas id="game" aria-label="달토끼와 채소 나누기. 채소나 친구를 눌러 보세요."></canvas>
+  <div class="toolbar">
+    <button id="pause-toggle" class="icon-button" type="button" aria-label="잠깐 쉬기" title="잠깐 쉬기" hidden>Ⅱ</button>
+    <button id="sound-toggle" class="icon-button" type="button" aria-label="소리 끄기" aria-pressed="false" title="소리 끄기">🔊</button>
+  </div>
+  <section id="welcome-panel" class="panel-layer" aria-labelledby="welcome-title">
+    <div class="panel">
+      <div class="veggie-pair" aria-hidden="true">🥕 🥒</div>
+      <h1 id="welcome-title">달토끼와 나눠요</h1>
+      <p>채소를 톡!<br>토끼와 하나씩 세어 봐요.</p>
+      <button id="start-button" class="primary-button" type="button">▶ 같이 놀기</button>
+      <p class="grownup-note">함께 이름을 말하고, 천천히 놀아요.</p>
+    </div>
+  </section>
+  <section id="pause-panel" class="panel-layer" aria-labelledby="pause-title" hidden>
+    <div class="panel">
+      <div class="panel-symbol" aria-hidden="true">☾</div>
+      <h2 id="pause-title">잠깐 쉬어요</h2>
+      <p>토끼가 기다리고 있어요.</p>
+      <button id="resume-button" class="primary-button" type="button">▶ 계속 놀기</button>
+      <button id="home-button" class="secondary-button" type="button">⌂ 처음 화면</button>
+    </div>
+  </section>
+  <section id="ending-panel" class="panel-layer ending-layer" aria-labelledby="ending-title" hidden>
+    <div class="panel ending-panel">
+      <h2 id="ending-title">친구들과 나눴어요!</h2>
+      <p>우리 곁의 초록색을 찾아볼까요?</p>
+      <div class="ending-actions">
+        <button id="rest-button" class="secondary-button" type="button">☾ 이제 쉬기</button>
+        <button id="replay-button" class="primary-button" type="button">↻ 다시 놀기</button>
+      </div>
+    </div>
+  </section>
+  <p id="learning-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
   <script src="game.js"></script>
 </body>
 </html>

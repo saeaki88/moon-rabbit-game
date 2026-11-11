@@ -4,9 +4,14 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
 
+  const viewport = { width: 0, height: 0 };
   function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    viewport.width = window.innerWidth;
+    viewport.height = window.innerHeight;
+    const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(viewport.width * pixelRatio);
+    canvas.height = Math.round(viewport.height * pixelRatio);
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   }
   resize();
 
@@ -115,11 +120,12 @@
         return;
       }
     }
-    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    if (!G.paused && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   }
 
   function tone(freq, dur, type, vol, ramp) {
     if (!audioCtx) return;
+    if (!masterGain) return;
     const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
@@ -134,7 +140,7 @@
     osc.stop(t + dur);
   }
 
-  function playPop() { tone(800, 0.12, 'sine', 0.25, 250); }
+  function playPop() { tone(660, 0.12, 'sine', 0.12, 330); }
 
   function playMunch() {
     if (!audioCtx) return;
@@ -147,21 +153,21 @@
       const start = t + i * 0.07;
       osc.frequency.setValueAtTime(350 + i * 80, start);
       osc.frequency.exponentialRampToValueAtTime(150, start + 0.05);
-      gain.gain.setValueAtTime(0.15, start);
+      gain.gain.setValueAtTime(0.065, start);
       gain.gain.exponentialRampToValueAtTime(0.001, start + 0.05);
       osc.start(start);
       osc.stop(start + 0.05);
     }
   }
 
-  function playSparkle() { tone(1400, 0.15, 'sine', 0.08, 900); }
+  function playSparkle() { tone(880, 0.18, 'sine', 0.05, 660); }
 
-  function playLionRoar() { tone(180, 0.35, 'triangle', 0.07, 95); }
+  function playLionRoar() { tone(180, 0.35, 'triangle', 0.045, 110); }
 
   function playFanfare() {
     if (!audioCtx) return;
-    [523, 659, 784, 1047].forEach((freq, i) => {
-      const t = audioCtx.currentTime + i * 0.14;
+    [523, 659].forEach((freq, i) => {
+      const t = audioCtx.currentTime + i * 0.22;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'triangle';
@@ -169,7 +175,7 @@
       gain.connect(masterGain);
       osc.frequency.setValueAtTime(freq, t);
       gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.18, t + 0.04);
+      gain.gain.linearRampToValueAtTime(0.06, t + 0.04);
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
       osc.start(t);
       osc.stop(t + 0.35);
@@ -196,8 +202,8 @@
       gain.connect(masterGain);
       osc.frequency.setValueAtTime(note.f, time);
       gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(0.15, time + 0.03);
-      gain.gain.setValueAtTime(0.15, time + note.d * 0.7);
+      gain.gain.linearRampToValueAtTime(0.065, time + 0.03);
+      gain.gain.setValueAtTime(0.065, time + note.d * 0.7);
       gain.gain.exponentialRampToValueAtTime(0.001, time + note.d);
       osc.start(time);
       osc.stop(time + note.d + 0.05);
@@ -210,7 +216,7 @@
         gain2.connect(masterGain);
         osc2.frequency.setValueAtTime(note.f * 1.5, time);
         gain2.gain.setValueAtTime(0, time);
-        gain2.gain.linearRampToValueAtTime(0.06, time + 0.03);
+        gain2.gain.linearRampToValueAtTime(0.025, time + 0.03);
         gain2.gain.exponentialRampToValueAtTime(0.001, time + note.d);
         osc2.start(time);
         osc2.stop(time + note.d + 0.05);
@@ -219,6 +225,9 @@
       time += note.d;
     });
   }
+
+  // ===== Constants =====
+  const CARROT_DELAY = 1000;
 
   // ===== Background Music =====
   let bgmPlaying = false;
@@ -242,7 +251,9 @@
   ];
 
   function scheduleBGM() {
-    if (!audioCtx || !bgmPlaying) return;
+    if (!audioCtx || !bgmPlaying || G.paused) return;
+    // Resume from now after a delayed frame; never synthesize missed music in a burst.
+    if (bgmNextTime < audioCtx.currentTime) bgmNextTime = audioCtx.currentTime + 0.05;
     while (bgmNextTime < audioCtx.currentTime + 0.5) {
       const note = bgmMelody[bgmNoteIndex % bgmMelody.length];
       if (note.f > 0) {
@@ -253,8 +264,8 @@
         gain.connect(masterGain);
         osc.frequency.setValueAtTime(note.f, bgmNextTime);
         gain.gain.setValueAtTime(0, bgmNextTime);
-        gain.gain.linearRampToValueAtTime(0.05, bgmNextTime + 0.03);
-        gain.gain.setValueAtTime(0.05, bgmNextTime + note.d * 0.65);
+        gain.gain.linearRampToValueAtTime(0.025, bgmNextTime + 0.03);
+        gain.gain.setValueAtTime(0.025, bgmNextTime + note.d * 0.65);
         gain.gain.exponentialRampToValueAtTime(0.001, bgmNextTime + note.d * 0.95);
         osc.start(bgmNextTime);
         osc.stop(bgmNextTime + note.d);
@@ -275,15 +286,20 @@
   const G = {
     score: 0,
     time: 0,
+    clock: 0,
+    paused: false,
+    reducedMotion: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches),
+    basket: [],
+    feedback: '채소를 톡 눌러요',
     carrots: [],
     flyingCarrots: [],
     particles: [],
     stars: [],
     started: false,
-    soundEnabled: true,
+    soundEnabled: readSoundPreference(),
     spawnTimes: [],
     lastCarrotTime: 0,
-    carrotDelay: 600,
+    carrotDelay: CARROT_DELAY,
     endingType: null,
     celebrating: 0,
     rabbit: { x: 0, y: 0, size: 0, bounce: 0, happy: 0, eating: 0 },
@@ -326,16 +342,117 @@
 
   function flightKey(name) { return 'flight' + name[0].toUpperCase() + name.slice(1); }
 
+  function readSoundPreference() {
+    try { return window.localStorage.getItem('moon-rabbit-sound') !== 'off'; }
+    catch (_) { return true; }
+  }
+
   const soundButton = document.getElementById('sound-toggle');
-  soundButton.addEventListener('click', () => {
-    G.soundEnabled = !G.soundEnabled;
+  function updateSoundButton() {
     soundButton.textContent = G.soundEnabled ? '🔊' : '🔇';
     soundButton.setAttribute('aria-pressed', String(!G.soundEnabled));
     const label = G.soundEnabled ? '소리 끄기' : '소리 켜기';
     soundButton.setAttribute('aria-label', label);
     soundButton.title = label;
-    if (masterGain) masterGain.gain.setValueAtTime(G.soundEnabled ? 1 : 0, audioCtx.currentTime);
+    if (masterGain) masterGain.gain.setValueAtTime(G.soundEnabled && !G.paused ? 1 : 0, audioCtx.currentTime);
+  }
+  soundButton.addEventListener('click', () => {
+    G.soundEnabled = !G.soundEnabled;
+    try { window.localStorage.setItem('moon-rabbit-sound', G.soundEnabled ? 'on' : 'off'); } catch (_) {}
+    if (G.started && !G.paused) { ensureAudio(); startBGM(); }
+    updateSoundButton();
   });
+  updateSoundButton();
+
+  const welcomePanel = document.getElementById('welcome-panel');
+  const pausePanel = document.getElementById('pause-panel');
+  const endingPanel = document.getElementById('ending-panel');
+  const pauseButton = document.getElementById('pause-toggle');
+  const learningStatus = document.getElementById('learning-status');
+  const FRIEND_LABELS = {
+    turtle: '거북이', penguin: '펭귄', fox: '여우', brownBear: '불곰', lion: '사자',
+    leopardCat: '삵', squid: '오징어', duck: '오리', tiger: '호랑이', sunBear: '말레이곰',
+    chick: '병아리', cat: '고양이',
+  };
+  const COUNT_WORDS = ['함께 세어요', '하나', '둘', '셋', '넷', '다섯'];
+
+  function syncPanels() {
+    welcomePanel.hidden = G.started;
+    pausePanel.hidden = !G.paused;
+    endingPanel.hidden = !G.started || G.paused || G.endingPhase !== 'done';
+    pauseButton.hidden = !G.started || G.paused || G.endingPhase === 'done';
+  }
+
+  function setFeedback(text) {
+    G.feedback = text;
+    learningStatus.textContent = text;
+  }
+
+  function setPaused(paused) {
+    if (!G.started || G.paused === paused) return;
+    G.paused = paused;
+    if (audioCtx) {
+      if (paused) audioCtx.suspend().catch(() => {});
+      else {
+        // Queue resume even while a preceding suspend is still pending.
+        audioCtx.resume().catch(() => {});
+        // Keep the existing cursor: suspended audio retains its scheduled notes.
+        startBGM();
+      }
+    }
+    updateSoundButton();
+    syncPanels();
+    document.getElementById(paused ? 'resume-button' : 'pause-toggle').focus();
+  }
+
+  function startGame() {
+    G.started = true;
+    G.paused = false;
+    resetGame();
+    ensureAudio();
+    if (audioCtx) audioCtx.resume().catch(() => {});
+    startBGM();
+    updateSoundButton();
+    syncPanels();
+    pauseButton.focus();
+  }
+
+  function goHome() {
+    setPaused(true);
+    // Discard queued ending notes so a new game cannot resume the previous song.
+    if (masterGain) masterGain.disconnect();
+    if (audioCtx) audioCtx.close().catch(() => {});
+    audioCtx = null;
+    masterGain = null;
+    G.started = false;
+    resetGame();
+    G.carrots = [];
+    G.paused = false;
+    // Stay silent until the next explicit play action.
+    bgmPlaying = false;
+    syncPanels();
+    document.getElementById('start-button').focus();
+  }
+
+  document.getElementById('start-button').addEventListener('click', startGame);
+  document.getElementById('replay-button').addEventListener('click', startGame);
+  document.getElementById('rest-button').addEventListener('click', goHome);
+  document.getElementById('home-button').addEventListener('click', goHome);
+  document.getElementById('resume-button').addEventListener('click', () => setPaused(false));
+  pauseButton.addEventListener('click', () => setPaused(true));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) setPaused(true);
+  });
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && G.started) { event.preventDefault(); setPaused(!G.paused); }
+  });
+  if (window.matchMedia) {
+    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (motionPreference.addEventListener) motionPreference.addEventListener('change', event => {
+      G.reducedMotion = event.matches;
+      if (G.reducedMotion) G.particles = [];
+    });
+  }
 
   for (let i = 0; i < 70; i++) {
     G.stars.push({
@@ -364,8 +481,13 @@
     const spec = CHARACTER_SPEC[name];
     ch.visible = true;
     ch.enter = 0;
-    ch.x = spec.from === 'top' ? ch.targetX : spec.from === 'right' ? canvas.width + ch.size : -ch.size;
+    ch.x = spec.from === 'top' ? ch.targetX : spec.from === 'right' ? viewport.width + ch.size : -ch.size;
     ch.y = spec.from === 'top' ? -ch.size : ch.targetY;
+    if (G.reducedMotion) {
+      ch.x = ch.targetX;
+      ch.y = ch.targetY;
+      ch.enter = 1;
+    }
     playFanfare();
   }
 
@@ -375,7 +497,7 @@
     const by = sy + (ty - sy) * p;
     if (type === 'spiral') {
       const a = p * Math.PI * 3.5 + offset;
-      const r = (1 - p) * arcH * 0.45;
+      const r = (1 - p) * Math.sin(p * Math.PI) * arcH * 0.45;
       return { x: bx + Math.cos(a) * r, y: by - r * 0.7 - Math.sin(a) * r * 0.35 };
     }
     if (type === 'bounce') {
@@ -393,7 +515,7 @@
 
   // ===== Layout =====
   function layout() {
-    const w = canvas.width, h = canvas.height;
+    const w = viewport.width, h = viewport.height;
     G.moonR = Math.min(w, h) * 0.13;
     G.moonX = w * 0.8;
     G.moonY = Math.max(h * 0.16, G.moonR + 16);
@@ -421,16 +543,24 @@
       }
     });
 
-    const moonY = Math.max(G.moonR * 1.6 + 16, h * 0.22);
-    const backY = Math.max(h * 0.52, moonY + G.moonR * 1.6 + s * 0.7);
-    const frontY = Math.max(h * 0.76, backY + s * 1.55);
-    const targets = { rabbit: { x: w * 0.58, y: frontY } };
+    // Keep the landing scene outside the explicit rest/replay controls.
+    const sidePanel = w >= 480 && w > h;
+    const sceneWidth = sidePanel ? w - Math.min(320, w * 0.42) - 24 : w;
+    const sceneHeight = sidePanel ? h : Math.max(120, h - 180);
+    const endingScale = Math.min(1, sceneHeight / (h * 0.9), sceneWidth / Math.min(w, h));
+    const endingSize = s * endingScale;
+    const endingMoonR = G.moonR * endingScale;
+    const moonY = Math.max(endingMoonR * 1.6 + 12, sceneHeight * 0.22);
+    const backY = Math.max(sceneHeight * 0.54, moonY + endingMoonR * 1.6 + endingSize * 0.85);
+    const frontY = Math.min(sceneHeight - endingSize * 0.8, Math.max(sceneHeight * 0.82, backY + endingSize * 2.2));
+    const targets = { rabbit: { x: sceneWidth * 0.58, y: frontY } };
+    clampFlight('rabbit', targets.rabbit, endingScale);
     CHARACTER_NAMES.forEach(name => {
       const spec = CHARACTER_SPEC[name];
-      targets[name] = { x: w * spec.x, y: spec.row === 0 ? backY : frontY };
-      clampFlight(name, targets[name]);
+      targets[name] = { x: sceneWidth * spec.x, y: spec.row === 0 ? backY : frontY };
+      clampFlight(name, targets[name], endingScale);
     });
-    G.endingLayout = { moonX: w * 0.5, moonY, targets };
+    G.endingLayout = { moonX: sceneWidth * 0.5, moonY, moonR: endingMoonR, scale: endingScale, targets };
     if (G.ending) {
       ['rabbit', ...CHARACTER_NAMES].forEach(name => {
         const flight = G[flightKey(name)];
@@ -442,24 +572,26 @@
     G.carrots = G.carrots.filter(c => veggieSpotFree(c.x, c.y, c.size, c));
   }
 
-  function clampFlight(name, position) {
-    const s = G[name].size;
+  function clampFlight(name, position, scale = G.ending ? G.endingLayout.scale : 1) {
+    const s = G[name].size * scale;
     const side = s * (name === 'cat' ? 0.95 : 0.75);
-    const top = s * (name === 'rabbit' ? 1.25 : 0.95);
+    // Include ears, the happy stretch and the rabbit's small hop in the envelope.
+    const top = s * (name === 'rabbit' ? 1.85 : 0.95);
     const bottom = s * (name === 'squid' ? 1.05 : 0.7);
-    position.x = Math.max(side + 8, Math.min(canvas.width - side - 8, position.x));
-    position.y = Math.max(top + 8, Math.min(canvas.height - bottom - 8, position.y));
+    position.x = Math.max(side + 8, Math.min(viewport.width - side - 8, position.x));
+    position.y = Math.max(top + 8, Math.min(viewport.height - bottom - 8, position.y));
   }
 
   function drawCharacters(t) {
     const names = ['rabbit', ...CHARACTER_NAMES].filter(name => name === 'rabbit' || G[name].visible);
     names.sort((a, b) => (G.ending ? G[flightKey(a)].y - G[flightKey(b)].y : G[a].y - G[b].y));
     names.forEach(name => {
-      if (name === 'rabbit') { drawRabbit(t); return; }
+      if (name === 'rabbit') { drawRabbit(t, G.rabbit); return; }
       const ch = G[name];
       const position = G.ending ? G[flightKey(name)] : ch;
-      const hop = Math.sin(Math.min(1, ch.react) * Math.PI) * ch.size * 0.2;
-      CHARACTER_SPEC[name].draw(position.x, position.y - hop, ch.size, t, ch.enter, ch.react);
+      const hop = G.reducedMotion ? 0 : Math.sin(Math.min(1, ch.react) * Math.PI) * ch.size * 0.12;
+      const size = ch.size * (G.ending ? G.endingLayout.scale : 1);
+      CHARACTER_SPEC[name].draw(position.x, position.y - hop, size, t, ch.enter, G.reducedMotion ? 0 : ch.react);
     });
   }
   layout();
@@ -492,7 +624,7 @@
 
   // ===== Background =====
   function drawSky() {
-    const w = canvas.width, h = canvas.height;
+    const w = viewport.width, h = viewport.height;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
 
     if (G.ending && G.endingPhase === 'flying') {
@@ -518,9 +650,9 @@
   }
 
   function drawStarsBackground(t) {
-    const w = canvas.width, h = canvas.height;
+    const w = viewport.width, h = viewport.height;
     G.stars.forEach(s => {
-      const alpha = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * s.speed + s.phase));
+      const alpha = G.reducedMotion ? 0.55 : 0.55 + 0.1 * Math.sin(t * s.speed * 0.35 + s.phase);
       ctx.globalAlpha = alpha;
       circle(s.x * w, s.y * h, s.r, C.star);
     });
@@ -532,12 +664,12 @@
 
     if (G.ending && G.endingPhase === 'flying') {
       const p = easeInOutCubic(Math.min(1, G.endingTime / 3));
-      mr = G.moonR * (1 + p * 0.6);
+      mr = G.moonR + (G.endingLayout.moonR * 1.6 - G.moonR) * p;
       mx += (G.endingLayout.moonX - mx) * p;
       my += (G.endingLayout.moonY - my) * p;
     }
     if (G.ending && (G.endingPhase === 'celebrating' || G.endingPhase === 'done')) {
-      mr = G.moonR * 1.6;
+      mr = G.endingLayout.moonR * 1.6;
       mx = G.endingLayout.moonX;
       my = G.endingLayout.moonY;
     }
@@ -670,7 +802,7 @@
       ctx.globalAlpha = 1 - fadeOut;
     }
 
-    const w = canvas.width, h = canvas.height;
+    const w = viewport.width, h = viewport.height;
     const grad = ctx.createLinearGradient(0, G.groundY - 10, 0, h);
     grad.addColorStop(0, '#1c3a5e');
     grad.addColorStop(0.3, '#163050');
@@ -698,17 +830,17 @@
   // ===== Draw Rabbit (with hopping!) =====
   function drawRabbitAt(x, y, size, t, state) {
     const s = size;
-    const bounce = state.bounce || 0;
-    const happy = state.happy || 0;
+    const bounce = G.reducedMotion ? 0 : (state.bounce || 0);
+    const happy = G.reducedMotion ? 0 : (state.happy || 0);
     const eating = state.eating || 0;
     const bounceY = Math.sin(bounce * 4) * s * 0.12 * Math.min(1, bounce);
     const happyScale = 1 + Math.max(0, happy) * 0.03;
     const idleTilt = Math.sin(t * 0.7) * 0.02;
 
     // Continuous bunny hop animation
-    const hopCycle = t * 2.0;
+    const hopCycle = t * 0.65;
     const hopSin = Math.sin(hopCycle * Math.PI);
-    const idleHop = bounce < 0.1 ? Math.max(0, hopSin) * s * 0.4 : 0;
+    const idleHop = bounce < 0.1 ? Math.max(0, hopSin) * s * 0.16 : 0;
     // Squash and stretch during hop
     const hopSquash = bounce < 0.1 ? (hopSin > 0 ? 1 - hopSin * 0.12 : 1 + Math.max(0, -hopSin) * 0.1) : 1;
     const hopStretch = bounce < 0.1 ? (hopSin > 0 ? 1 + hopSin * 0.12 : 1 - Math.max(0, -hopSin) * 0.1) : 1;
@@ -850,10 +982,10 @@
     ctx.restore();
   }
 
-  function drawRabbit(t) {
-    const r = G.rabbit;
+  function drawRabbit(t, state) {
+    const r = state || G.rabbit;
     if (G.ending) {
-      drawRabbitAt(G.flightRabbit.x, G.flightRabbit.y, r.size, t, r);
+      drawRabbitAt(G.flightRabbit.x, G.flightRabbit.y, r.size * G.endingLayout.scale, t, r);
     } else {
       drawRabbitAt(r.x, r.y, r.size, t, r);
     }
@@ -2179,30 +2311,45 @@
   }
 
   // ===== Particles =====
+  function addParticle(particle) {
+    if (G.particles.length >= 48) return;
+    if (G.reducedMotion) { particle.vx = 0; particle.vy = 0; }
+    G.particles.push(particle);
+  }
+
+  function particleChance(rate, dt) {
+    return !G.reducedMotion && Math.random() < 1 - Math.pow(1 - rate, dt * 60);
+  }
+
   function spawnParticles(x, y, count, type) {
+    if (G.reducedMotion) count = Math.min(2, count);
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
-      const speed = 1.5 + Math.random() * 3;
-      G.particles.push({
+      const speed = 0.7 + Math.random() * 1.3;
+      addParticle({
         x, y,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 2.5,
+        vy: Math.sin(angle) * speed - 1,
         life: 1,
         decay: 0.012 + Math.random() * 0.01,
-        size: 4 + Math.random() * 6,
+        size: 3 + Math.random() * 4,
         type: type || 'star',
       });
     }
   }
 
-  function updateParticles() {
+  function updateParticles(dt) {
+    const frames = dt * 60;
+    const damping = Math.pow(0.99, frames);
     for (let i = G.particles.length - 1; i >= 0; i--) {
       const p = G.particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.06;
-      p.vx *= 0.99;
-      p.life -= p.decay;
+      if (!G.reducedMotion) {
+        p.x += p.vx * (1 - damping) / -Math.log(0.99);
+        p.y += p.vy * frames + 0.03 * frames * frames;
+        p.vy += 0.06 * frames;
+        p.vx *= damping;
+      }
+      p.life -= p.decay * frames;
       if (p.life <= 0) G.particles.splice(i, 1);
     }
   }
@@ -2248,7 +2395,10 @@
 
   function veggieSpotFree(x, y, size, ignore) {
     const radius = veggieHitRadius(size);
-    if (x < radius + 8 || x > canvas.width - radius - 8 || y < Math.max(84, radius + 8) || y > G.groundY - radius) return false;
+    if (x < radius + 8 || x > viewport.width - radius - 8 || y < Math.max(84, radius + 8) || y > G.groundY - radius) return false;
+    // Leave the counting basket unobstructed, including the vegetable's hit area.
+    const basketBottom = viewport.height <= 480 ? 84 : 116;
+    if (x < Math.min(230, viewport.width - 140) + 12 + radius && y < basketBottom + radius) return false;
     if (Math.hypot(x - G.moonX, y - G.moonY) < G.moonR + radius + 8) return false;
     if (Math.hypot(x - G.rabbit.x, y - G.rabbit.y) < radius + G.rabbit.size) return false;
     for (const name of CHARACTER_NAMES) {
@@ -2264,39 +2414,56 @@
   }
 
   function spawnCarrot() {
-    if (G.ending || G.endingPending || G.carrots.length >= 3 || G.score + G.flyingCarrots.length >= CARROT_GOAL) return;
-    const size = Math.min(canvas.width, canvas.height) * 0.09;
+    if (G.ending || G.endingPending || G.carrots.length >= 1 || G.score + G.flyingCarrots.length >= CARROT_GOAL) return;
+    const size = Math.min(viewport.width, viewport.height) * (viewport.height <= 480 ? 0.075 : 0.09);
     const margin = veggieHitRadius(size) + 8;
     const minY = Math.max(84, margin);
     const maxY = G.groundY - veggieHitRadius(size);
     let spot = null;
     for (let attempt = 0; attempt < 40; attempt++) {
-      const x = margin + Math.random() * (canvas.width - margin * 2);
+      const x = margin + Math.random() * (viewport.width - margin * 2);
       const y = minY + Math.random() * Math.max(0, maxY - minY);
       if (veggieSpotFree(x, y, size)) { spot = { x, y }; break; }
     }
     // Never fall back to a position that overlaps a friend or another vegetable.
     if (!spot) {
-      const spacing = margin * 2;
+      const spacing = Math.max(12, margin * 0.4);
       for (let y = minY; y <= maxY && !spot; y += spacing) {
-        for (let x = margin; x <= canvas.width - margin && !spot; x += spacing) {
+        for (let x = margin; x <= viewport.width - margin && !spot; x += spacing) {
           if (veggieSpotFree(x, y, size)) spot = { x, y };
         }
       }
     }
-    if (!spot) { G.lastCarrotTime = performance.now(); return; }
+    if (!spot) { G.lastCarrotTime = G.clock; return; }
     const type = Math.random() < 0.5 ? 'cucumber' : 'carrot';
     G.carrots.push({ ...spot, size, scale: 0, wobble: Math.random() * Math.PI * 2, type });
   }
 
   // ===== Flying Carrot Animation =====
+  function flyingCarrotPosition(fc) {
+    const t = fc.t, mt = 1 - t;
+    const ex = G.rabbit.x, ey = G.rabbit.y - G.rabbit.size * 0.15;
+    const cpY = G.reducedMotion ? (fc.sy + ey) / 2 : Math.min(fc.sy, ey) - 80;
+    return {
+      x: mt * mt * fc.sx + 2 * mt * t * ((fc.sx + ex) / 2) + t * t * ex,
+      y: mt * mt * fc.sy + 2 * mt * t * cpY + t * t * ey,
+    };
+  }
+
   function updateFlyingCarrots(dt) {
     for (let i = G.flyingCarrots.length - 1; i >= 0; i--) {
       const fc = G.flyingCarrots[i];
       fc.t += dt * 2.8;
       if (fc.t >= 1) {
         G.flyingCarrots.splice(i, 1);
-        onCarrotEaten();
+        onCarrotEaten(fc.type);
+      } else if (particleChance(0.08, dt)) {
+        const position = flyingCarrotPosition(fc);
+        addParticle({
+          x: position.x, y: position.y,
+          vx: (Math.random() - 0.5) * 0.6, vy: 0.2,
+          life: 0.6, decay: 0.03, size: 3, type: 'star',
+        });
       }
     }
   }
@@ -2304,77 +2471,58 @@
   function drawFlyingCarrots() {
     G.flyingCarrots.forEach(fc => {
       const t = fc.t;
-      const ex = G.rabbit.x, ey = G.rabbit.y - G.rabbit.size * 0.15;
-      const cpY = Math.min(fc.sy, ey) - 120;
-
-      const mt = 1 - t;
-      const x = mt * mt * fc.sx + 2 * mt * t * ((fc.sx + ex) / 2) + t * t * ex;
-      const y = mt * mt * fc.sy + 2 * mt * t * cpY + t * t * ey;
+      const { x, y } = flyingCarrotPosition(fc);
 
       const scale = 1 - t * 0.6;
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(scale, scale);
       ctx.globalAlpha = 1 - t * 0.3;
-      drawVeggieShape(fc.type || 'carrot', 0, 0, fc.size * 0.6, t * 15);
+      drawVeggieShape(fc.type || 'carrot', 0, 0, fc.size * 0.6, G.reducedMotion ? 0 : t * 8);
       ctx.globalAlpha = 1;
       ctx.restore();
 
-      if (Math.random() < 0.4) {
-        G.particles.push({
-          x, y,
-          vx: (Math.random() - 0.5) * 1.5,
-          vy: (Math.random() - 0.5) * 1.5,
-          life: 0.6, decay: 0.03,
-          size: 3 + Math.random() * 3,
-          type: 'star',
-        });
-      }
     });
   }
 
-  // ===== Score Display =====
+  // ===== Counting Basket =====
   function drawScore() {
-    if (G.score === 0) return;
-    const s = Math.min(canvas.width, canvas.height) * 0.035;
-    const x = 20, y = 20;
-
-    drawCarrotShape(x + s * 0.4, y + s * 0.5, s * 1.1, 0);
-    ctx.fillStyle = '#fff';
-    ctx.font = `bold ${s}px -apple-system, sans-serif`;
+    const x = 12, y = 12, width = Math.min(230, viewport.width - 140);
+    const compact = viewport.height <= 480;
+    const height = compact ? 64 : 102;
+    const rowY = compact ? 32 : 53;
+    const count = G.basket.length;
+    const basketNumber = Math.max(0, Math.floor((G.score - 1) / 5));
+    const slots = basketNumber === 2 ? 4 : 5;
+    ctx.fillStyle = 'rgba(15, 31, 50, 0.94)';
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y);
+    ctx.lineTo(x + width - 16, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + 16);
+    ctx.lineTo(x + width, y + height - 16);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - 16, y + height);
+    ctx.lineTo(x + 16, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - 16);
+    ctx.lineTo(x, y + 16);
+    ctx.quadraticCurveTo(x, y, x + 16, y);
+    ctx.fill();
+    ctx.fillStyle = C.moon;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.globalAlpha = 0.85;
-    ctx.fillText(G.score, x + s * 1.2, y + s * 0.55);
-    ctx.globalAlpha = 1;
-  }
-
-  // ===== Start / End Screens =====
-  function drawStartText(t) {
-    const w = canvas.width, h = canvas.height;
-    const alpha = 0.5 + Math.sin(t * 2.5) * 0.3;
-    const fontSize = Math.min(w, h) * 0.045;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = C.moon;
-    ctx.font = `${fontSize}px -apple-system, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('터치해서 시작!', w / 2, h * 0.55);
-    ctx.globalAlpha = 1;
-  }
-
-  function drawEndingText(t) {
-    if (G.endingPhase !== 'done') return;
-    const w = canvas.width, h = canvas.height;
-    const fontSize = Math.min(w, h) * 0.05;
-    const alpha = 0.5 + Math.sin(t * 2.5) * 0.3;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = C.moon;
-    ctx.font = `${fontSize}px -apple-system, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('한번 더!', w / 2, h * 0.9);
-    ctx.globalAlpha = 1;
+    ctx.font = `${compact ? 13 : 16}px -apple-system, sans-serif`;
+    ctx.fillText(G.feedback, x + 12, y + (compact ? 12 : 21), width - 24);
+    ctx.font = `bold ${compact ? 22 : 28}px -apple-system, sans-serif`;
+    ctx.fillText(String(count), x + 14, y + rowY);
+    const spacing = (width - 58) / 5;
+    for (let i = 0; i < slots; i++) {
+      const px = x + 51 + i * spacing;
+      circle(px, y + rowY, 9, '#32495b');
+      if (i < count) drawVeggieShape(G.basket[i], px, y + rowY, Math.min(15, spacing * 0.62), 0);
+    }
+    ctx.fillStyle = '#c5d4dd';
+    ctx.font = `${compact ? 12 : 14}px -apple-system, sans-serif`;
+    const label = ['첫 바구니', '두 번째 바구니', '마지막 바구니'][basketNumber];
+    ctx.fillText(label + ' · ' + COUNT_WORDS[count], x + 12, y + height - (compact ? 11 : 18), width - 24);
   }
 
   // ===== Fly to Moon Logic =====
@@ -2407,13 +2555,13 @@
     G.endingTime += dt;
     const type = G.endingType || 'arc';
     const { moonX, moonY } = G.endingLayout;
-    const moonR = G.moonR;
+    const moonR = G.endingLayout.moonR;
 
     if (G.endingPhase === 'flying') {
       const duration = type === 'float' ? 5 : 4;
       const p = easeInOutCubic(Math.min(1, G.endingTime / duration));
 
-      const arcH = canvas.height * 0.25;
+      const arcH = G.reducedMotion ? 0 : viewport.height * 0.18;
       ['rabbit', ...CHARACTER_NAMES].forEach((name, i) => {
         if (name !== 'rabbit' && !G[name].visible) return;
         const flight = G[flightKey(name)];
@@ -2430,17 +2578,17 @@
       const trailAlt = trailType === 'heart' ? 'star' : 'heart';
 
       function trail(fx, fy, sz, rate, pt) {
-        if (Math.random() < rate) {
-          const vx = type === 'spiral' ? (Math.random() - 0.5) * 4 : (Math.random() - 0.5) * 2;
-          const vy = type === 'bounce' ? -1 - Math.random() * 2 : 1 + Math.random() * 2;
-          G.particles.push({ x: fx, y: fy + sz * 0.25, vx, vy,
-            life: 0.8, decay: 0.02, size: 3 + Math.random() * 4, type: pt });
+        if (particleChance(rate, dt)) {
+          const vx = (Math.random() - 0.5) * 0.8;
+          const vy = type === 'bounce' ? -0.5 : 0.5;
+          addParticle({ x: fx, y: fy + sz * 0.25, vx, vy,
+            life: 0.6, decay: 0.02, size: 3 + Math.random() * 2, type: pt });
         }
       }
       ['rabbit', ...CHARACTER_NAMES].forEach((name, i) => {
         if (name !== 'rabbit' && !G[name].visible) return;
         const f = G[flightKey(name)];
-        trail(f.x, f.y, G[name].size, 0.4, i % 2 ? trailAlt : trailType);
+        trail(f.x, f.y, G[name].size, 0.025, i % 2 ? trailAlt : trailType);
       });
 
       G.rabbit.happy = 10;
@@ -2448,34 +2596,31 @@
       if (G.endingTime >= duration) {
         G.endingPhase = 'celebrating';
         G.endingTime = 0;
-        // Arrival burst varies per type
+        // A small arrival greeting preserves each ending's character.
+        const arrivalCount = G.reducedMotion ? 2 : 10;
         if (type === 'spiral') {
-          // ring explosion outward
-          for (let i = 0; i < 30; i++) {
-            const a = (Math.PI * 2 * i) / 30;
-            G.particles.push({ x: moonX, y: moonY,
-              vx: Math.cos(a) * 5, vy: Math.sin(a) * 5,
-              life: 1, decay: 0.015, size: 5 + Math.random() * 4, type: i % 2 === 0 ? 'star' : 'heart' });
+          for (let i = 0; i < arrivalCount; i++) {
+            const a = (Math.PI * 2 * i) / arrivalCount;
+            addParticle({ x: moonX, y: moonY,
+              vx: Math.cos(a) * 1.5, vy: Math.sin(a) * 1.5,
+              life: 1, decay: 0.015, size: 3 + Math.random() * 3, type: i % 2 === 0 ? 'star' : 'heart' });
           }
         } else if (type === 'bounce') {
-          // upward pop fountain
-          for (let i = 0; i < 40; i++) {
-            G.particles.push({ x: moonX + (Math.random() - 0.5) * moonR * 2, y: moonY,
-              vx: (Math.random() - 0.5) * 3, vy: -3 - Math.random() * 5,
-              life: 1, decay: 0.012, size: 4 + Math.random() * 5, type: 'heart' });
+          for (let i = 0; i < arrivalCount; i++) {
+            addParticle({ x: moonX + (Math.random() - 0.5) * moonR * 2, y: moonY,
+              vx: (Math.random() - 0.5), vy: -1 - Math.random(),
+              life: 1, decay: 0.015, size: 3 + Math.random() * 3, type: 'heart' });
           }
         } else if (type === 'float') {
-          // gentle shower from above
-          for (let i = 0; i < 35; i++) {
-            G.particles.push({ x: moonX + (Math.random() - 0.5) * moonR * 4,
-              y: moonY - moonR * 2 - Math.random() * moonR,
-              vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2,
-              life: 1, decay: 0.01, size: 4 + Math.random() * 4, type: i % 3 === 0 ? 'star' : 'heart' });
+          for (let i = 0; i < arrivalCount; i++) {
+            addParticle({ x: moonX + (Math.random() - 0.5) * moonR * 3,
+              y: moonY - moonR,
+              vx: (Math.random() - 0.5) * 0.5, vy: 0.5,
+              life: 1, decay: 0.015, size: 3 + Math.random() * 3, type: i % 3 === 0 ? 'star' : 'heart' });
           }
         } else {
-          // arc: classic burst
-          spawnParticles(moonX, moonY, 25, 'heart');
-          spawnParticles(moonX, moonY, 25, 'star');
+          spawnParticles(moonX, moonY, arrivalCount / 2, 'heart');
+          spawnParticles(moonX, moonY, arrivalCount / 2, 'star');
         }
       }
     }
@@ -2486,52 +2631,54 @@
 
       // Ongoing celebration effects vary per type
       if (type === 'spiral') {
-        // Particles spiral outward continuously
-        if (Math.random() < 0.4) {
-          const a = G.endingTime * 4 + Math.random() * Math.PI;
+        if (particleChance(0.06, dt)) {
+          const a = G.endingTime + Math.random() * Math.PI;
           const r = moonR * (0.5 + Math.random());
-          G.particles.push({ x: moonX + Math.cos(a) * r, y: moonY + Math.sin(a) * r,
-            vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
-            life: 0.8, decay: 0.02, size: 4 + Math.random() * 4, type: Math.random() < 0.5 ? 'star' : 'heart' });
+          addParticle({ x: moonX + Math.cos(a) * r, y: moonY + Math.sin(a) * r,
+            vx: Math.cos(a) * 0.5, vy: Math.sin(a) * 0.5,
+            life: 0.8, decay: 0.02, size: 3 + Math.random() * 2, type: Math.random() < 0.5 ? 'star' : 'heart' });
         }
       } else if (type === 'bounce') {
-        // Particles pop up repeatedly like popcorn
-        if (Math.sin(G.endingTime * 6) > 0.5 && Math.random() < 0.6) {
-          G.particles.push({
+        if (particleChance(0.06, dt)) {
+          addParticle({
             x: moonX + (Math.random() - 0.5) * moonR * 3,
             y: moonY + moonR,
-            vx: (Math.random() - 0.5) * 2, vy: -4 - Math.random() * 4,
-            life: 0.9, decay: 0.02, size: 4 + Math.random() * 5, type: 'heart' });
+            vx: (Math.random() - 0.5) * 0.5, vy: -1 - Math.random(),
+            life: 0.8, decay: 0.02, size: 3 + Math.random() * 2, type: 'heart' });
         }
       } else if (type === 'float') {
         // Gentle hearts/stars drift down like snow
-        if (Math.random() < 0.35) {
-          G.particles.push({
+        if (particleChance(0.06, dt)) {
+          addParticle({
             x: moonX + (Math.random() - 0.5) * moonR * 5,
             y: moonY - moonR * 2,
-            vx: (Math.random() - 0.5) * 1, vy: 0.5 + Math.random() * 1.5,
-            life: 1, decay: 0.01, size: 3 + Math.random() * 4, type: Math.random() < 0.6 ? 'heart' : 'star' });
+            vx: (Math.random() - 0.5) * 0.5, vy: 0.5,
+            life: 0.8, decay: 0.02, size: 3 + Math.random() * 2, type: Math.random() < 0.6 ? 'heart' : 'star' });
         }
       } else {
-        // arc: random bursts
-        if (Math.sin(G.endingTime * 3) > 0.7 && Math.random() < 0.5) {
+        if (particleChance(0.03, dt)) {
           spawnParticles(
             moonX + (Math.random() - 0.5) * moonR * 3,
             moonY + (Math.random() - 0.5) * moonR * 2,
-            5, Math.random() < 0.5 ? 'heart' : 'star'
+            2, Math.random() < 0.5 ? 'heart' : 'star'
           );
         }
       }
 
-      if (G.endingTime >= 5) {
+      if (G.endingTime >= 3) {
         G.endingPhase = 'done';
         G.endingTime = 0;
+        syncPanels();
+        document.getElementById('rest-button').focus();
       }
     }
   }
 
   function resetGame() {
     G.score = 0;
+    G.clock = 0;
+    G.basket = [];
+    setFeedback('채소를 톡 눌러요');
     G.ending = false;
     G.endingPending = false;
     G.endingStartAt = 0;
@@ -2555,20 +2702,24 @@
       G[flightKey(name)] = { x: 0, y: 0 };
     });
     layout();
-    G.lastCarrotTime = performance.now();
+    G.lastCarrotTime = G.clock;
     spawnCarrot();
   }
 
   // ===== Game Logic =====
-  function onCarrotEaten() {
+  function onCarrotEaten(type) {
     if (G.ending || G.endingPending || G.score >= CARROT_GOAL) return;
     const r = G.rabbit;
     r.eating = 1;
     r.happy = 3;
     r.bounce = 1;
     G.score++;
-    playMunch();
-    spawnParticles(r.x, r.y - r.size * 0.3, 8, 'heart');
+    if (G.basket.length === 5) G.basket = [];
+    G.basket.push(type || 'carrot');
+    const vegetableName = type === 'cucumber' ? '초록 오이' : '주황 당근';
+    setFeedback(G.basket.length === 5 ? '다섯! 바구니가 찼어요' : vegetableName);
+    learningStatus.textContent = vegetableName + ', ' + COUNT_WORDS[G.basket.length] + '. 토끼와 나눴어요.';
+    spawnParticles(r.x, r.y - r.size * 0.3, 3, 'heart');
 
     G.characterOrder.forEach((name, i) => {
       if (G.score >= FRIEND_THRESHOLDS[i] && !G[name].visible) spawnCharacterByName(name);
@@ -2576,29 +2727,16 @@
     if (G.score === CARROT_GOAL) {
       G.endingType = ENDING_TYPES[Math.floor(Math.random() * ENDING_TYPES.length)];
       G.endingPending = true;
-      G.endingStartAt = performance.now() + 800;
+      G.endingStartAt = G.clock + 1200;
       G.carrots = [];
       G.spawnTimes = [];
     }
-    G.lastCarrotTime = performance.now();
+    G.lastCarrotTime = G.clock + (G.basket.length === 5 ? 1200 : 0);
   }
 
   function handleTap(px, py) {
+    if (!G.started || G.paused || document.hidden || G.ending || G.endingPending) return;
     ensureAudio();
-
-    if (!G.started) {
-      G.started = true;
-      startBGM();
-      spawnCarrot();
-      return;
-    }
-
-    if (G.endingPhase === 'done') {
-      resetGame();
-      return;
-    }
-
-    if (G.ending || G.endingPending) return;
 
     // Check carrot hits FIRST (fixes clicks near moon)
     for (let i = G.carrots.length - 1; i >= 0; i--) {
@@ -2607,8 +2745,7 @@
       const dist = Math.hypot(px - c.x, py - c.y);
       if (dist < veggieHitRadius(c.size) && G.score + G.flyingCarrots.length < CARROT_GOAL) {
         playPop();
-        playSparkle();
-        spawnParticles(c.x, c.y, 6, 'star');
+        spawnParticles(c.x, c.y, 3, 'star');
         G.flyingCarrots.push({ sx: c.x, sy: c.y, size: c.size, t: 0, type: c.type });
         G.carrots.splice(i, 1);
         return;
@@ -2617,17 +2754,19 @@
 
     // Tap the moon (moon rabbit) → dim the screen
     if (Math.hypot(px - G.moonX, py - G.moonY) < G.moonR * 1.3) {
-      G.dimming = 1;
+      G.dimming = G.reducedMotion ? 0 : 0.3;
+      setFeedback('달이 반가워요');
       playSparkle();
-      spawnParticles(G.moonX, G.moonY, 8, 'star');
+      spawnParticles(G.moonX, G.moonY, 3, 'star');
       return;
     }
 
     // Tap characters
     const r = G.rabbit;
-    if (Math.hypot(px - r.x, py - r.y) < r.size * 0.5) {
+    if (Math.hypot(px - r.x, py - r.y) < Math.max(28, r.size * 0.65)) {
       r.bounce = 1;
       r.happy = 2;
+      setFeedback('토끼 · 반가워!');
       playSparkle();
       spawnParticles(r.x, r.y - r.size * 0.3, 5, 'heart');
       return;
@@ -2638,6 +2777,7 @@
       if (!ch.visible || ch.enter < 0.5) continue;
       if (Math.hypot(px - ch.x, py - ch.y) < Math.max(24, ch.size * 0.65)) {
         ch.react = 1;
+        setFeedback(FRIEND_LABELS[name] + ' · 반가워!');
         if (name === 'lion') playLionRoar();
         else playSparkle();
         spawnParticles(ch.x, ch.y - ch.size * 0.2, 7, CHARACTER_SPEC[name].particle);
@@ -2647,6 +2787,7 @@
   }
 
   canvas.addEventListener('pointerdown', e => {
+    if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     handleTap(e.clientX, e.clientY);
   });
@@ -2657,9 +2798,11 @@
   function update(now) {
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
-    G.time = now / 1000;
-
+    if (G.paused || document.hidden) return;
+    G.time += dt;
     if (!G.started) return;
+    G.clock += dt * 1000;
+    now = G.clock;
 
     // BGM scheduling
     scheduleBGM();
@@ -2673,7 +2816,7 @@
       if (r.bounce > 0) r.bounce = Math.max(0, r.bounce - dt * 3);
       if (r.happy > 0) r.happy = Math.max(0, r.happy - dt * 0.5);
       if (r.eating > 0) r.eating = Math.max(0, r.eating - dt * 2.5);
-      updateParticles();
+      updateParticles(dt);
       return;
     }
 
@@ -2694,7 +2837,7 @@
     });
     if (G.endingPending) {
       if (now >= G.endingStartAt) startFlyToMoon();
-      updateParticles();
+      updateParticles(dt);
       return;
     }
     const scheduled = G.spawnTimes.filter(time => time <= now);
@@ -2710,27 +2853,22 @@
     if (G.carrots.length === 0 && G.flyingCarrots.length === 0 && !G.ending) {
       if (now - G.lastCarrotTime > G.carrotDelay) {
         spawnCarrot();
-        if (G.score > 2 && Math.random() < 0.4) {
-          G.spawnTimes.push(now + 200);
-        }
-        if (G.score > 6 && Math.random() < 0.3) {
-          G.spawnTimes.push(now + 400);
-        }
+
       }
     }
 
     G.carrots.forEach(c => {
       c.scale = Math.min(1, c.scale + dt * 5);
-      c.wobble += dt * 3;
+      if (!G.reducedMotion) c.wobble += dt * 1.5;
     });
 
     updateFlyingCarrots(dt);
-    updateParticles();
+    updateParticles(dt);
   }
 
   // ===== Draw =====
   function draw() {
-    const t = G.time;
+    const t = G.reducedMotion ? 0 : G.time;
 
     drawSky();
     drawStarsBackground(t);
@@ -2738,16 +2876,14 @@
     drawGround();
 
     if (!G.started) {
-      drawRabbit(t);
-      drawStartText(t);
+      drawRabbit(t, G.rabbit);
       return;
     }
 
     if (G.ending) {
       drawCharacters(t);
       drawParticles();
-      drawScore();
-      drawEndingText(t);
+      // drawScore() — 엔딩 중에는 점수 숨김
       return;
     }
 
@@ -2761,7 +2897,7 @@
       const glowColor = c.type === 'cucumber' ? '#8ae070' : '#ffa040';
       circle(0, 0, c.size * 0.7, glowColor);
       ctx.globalAlpha = 1;
-      drawVeggieShape(c.type || 'carrot', 0, 0, c.size, c.wobble);
+      drawVeggieShape(c.type || 'carrot', 0, 0, c.size * 1.35, G.reducedMotion ? 0 : c.wobble);
       ctx.restore();
     });
 
@@ -2775,7 +2911,7 @@
     if (G.dimming <= 0) return;
     ctx.globalAlpha = G.dimming * 0.55;
     ctx.fillStyle = '#000010';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
     ctx.globalAlpha = 1;
 
     // Stars glow brighter when dimmed
@@ -2783,7 +2919,7 @@
       const extra = (G.dimming - 0.3) * 1.4;
       G.stars.forEach(s => {
         ctx.globalAlpha = extra * 0.5;
-        circle(s.x * canvas.width, s.y * canvas.height, s.r * 2.5, '#aaccff');
+        circle(s.x * viewport.width, s.y * viewport.height, s.r * 2.5, '#aaccff');
       });
       ctx.globalAlpha = 1;
     }
