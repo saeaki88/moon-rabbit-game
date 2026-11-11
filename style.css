@@ -99,6 +99,20 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 .secondary-button { color: #f5e6c8; background: #243d52; }
 .panel > .secondary-button { margin-top: 12px; }
 .panel .grownup-note { font-size: 14px; margin-bottom: 0; color: #c5d4dd; }
+.welcome-card { max-height: 100%; overflow-y: auto; touch-action: pan-y; }
+.name-settings { margin-top: 12px; text-align: left; color: #c5d4dd; }
+.name-settings summary { min-height: 36px; padding: 8px 0; font-size: 14px; cursor: pointer; }
+.name-settings label { display: block; margin: 8px 0; font-size: 15px; }
+.name-settings input {
+  width: 100%; min-height: 48px; padding: 10px 12px;
+  border: 1px solid #c5d4dd; border-radius: 12px; background: #f5efdf; color: #23362f;
+  font: inherit; font-size: 17px; -webkit-user-select: text; user-select: text; touch-action: manipulation;
+}
+.name-settings input:focus-visible, .name-settings summary:focus-visible { outline: 3px solid #ffd780; outline-offset: 3px; }
+.name-actions { display: flex; gap: 10px; margin-top: 10px; }
+.name-actions button { min-height: 44px; font-size: 16px; padding: 8px; }
+.name-settings p { font-size: 13px; line-height: 1.5; margin: 10px 0 0; }
+.name-settings #play-name-status:empty { display: none; }
 .ending-layer { align-items: flex-end; background: none; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 .ending-panel { width: min(100%, 460px); padding: 14px 18px; }
 .ending-panel h2 { font-size: 22px; }

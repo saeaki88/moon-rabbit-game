@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>달토끼의 당근 모으기</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261112-friend-talk">
 </head>
 <body>
   <canvas id="game" aria-label="달토끼와 채소 나누기. 채소나 친구를 눌러 보세요."></canvas>
@@ -13,7 +13,7 @@
     <button id="sound-toggle" class="icon-button" type="button" aria-label="소리 끄기" aria-pressed="false" title="소리 끄기">🔊</button>
   </div>
   <section id="welcome-panel" class="panel-layer" aria-labelledby="welcome-title">
-    <div class="panel">
+    <div class="panel welcome-card">
       <svg class="first-play-picture" viewBox="0 0 180 76" aria-hidden="true">
         <path d="M27 26 Q48 13 51 30 Q48 47 29 62 Q22 42 27 26" fill="#f49445"/>
         <path d="M34 24 Q19 5 29 4 L39 20 Q39 -1 46 4 L44 25 Q58 5 61 13 L48 28" fill="#79a85e"/>
@@ -31,6 +31,19 @@
       <p>토끼가 부탁한 채소를 찾아요.<br>하나, 둘, 셋! 하나씩 주세요.</p>
       <button id="start-button" class="primary-button" type="button"><span class="action-icon" aria-hidden="true">▶</span><span>같이 놀기</span></button>
       <p class="grownup-note">그림을 누르면 부탁을 다시 알려 줘요.</p>
+      <details class="name-settings">
+        <summary>보호자 · 이름 불러주기</summary>
+        <form id="play-name-form">
+          <label for="play-name-input">이름 또는 별명</label>
+          <input id="play-name-input" type="text" maxlength="12" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="이름 없이도 놀 수 있어요" aria-describedby="play-name-note">
+          <div class="name-actions">
+            <button class="primary-button" type="submit">저장</button>
+            <button id="clear-play-name" class="secondary-button" type="button">지우기</button>
+          </div>
+          <p id="play-name-note">이름은 이 브라우저에만 저장돼요.<br>기기 한국어 음성이 없으면 “친구야”라고 말해요.</p>
+          <p id="play-name-status" role="status" aria-live="polite"></p>
+        </form>
+      </details>
     </div>
   </section>
   <section id="pause-panel" class="panel-layer" aria-labelledby="pause-title" hidden>
@@ -53,6 +66,6 @@
     </div>
   </section>
   <p id="learning-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
-  <script src="game.js?v=20261111-gentle-voice-3"></script>
+  <script src="game.js?v=20261112-friend-talk"></script>
 </body>
 </html>

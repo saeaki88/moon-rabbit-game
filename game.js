@@ -371,6 +371,48 @@
     catch (_) { return true; }
   }
 
+  // A play name belongs to this browser, never to the shared game source or URL.
+  const PLAY_NAME_KEY = 'moon-rabbit-play-name';
+  function normalizePlayName(value) {
+    const cleaned = String(value || '').normalize('NFC')
+      .replace(/[^\p{L}\p{M}\s'-]/gu, '').replace(/\s+/g, ' ').trim();
+    return Array.from(cleaned).slice(0, 12).join('').trim();
+  }
+  let playName = '';
+  try { playName = normalizePlayName(window.localStorage.getItem(PLAY_NAME_KEY)); } catch (_) {}
+  function hasPlayName() { return !!playName; }
+  function getCallName() {
+    if (!playName) return '친구야';
+    const last = playName.charCodeAt(playName.length - 1);
+    if (last < 0xac00 || last > 0xd7a3) return playName;
+    return playName + ((last - 0xac00) % 28 ? '아' : '야');
+  }
+  const playNameInput = document.getElementById('play-name-input');
+  const playNameStatus = document.getElementById('play-name-status');
+  playNameInput.value = playName;
+  function savePlayName(value) {
+    cancelGuidance();
+    playName = normalizePlayName(value);
+    playNameInput.value = playName;
+    let saved = true;
+    try {
+      if (playName) window.localStorage.setItem(PLAY_NAME_KEY, playName);
+      else window.localStorage.removeItem(PLAY_NAME_KEY);
+    } catch (_) { saved = false; }
+    playNameStatus.textContent = playName
+      ? (saved ? '저장했어요. 친구를 눌러 들어 보세요.' : '이번 놀이에서 이름을 불러 줄게요.')
+      : '이름 없이도 친구들과 이야기할 수 있어요.';
+  }
+  document.getElementById('play-name-form').addEventListener('submit', event => {
+    event.preventDefault();
+    savePlayName(playNameInput.value);
+    playNameInput.blur();
+  });
+  document.getElementById('clear-play-name').addEventListener('click', () => {
+    savePlayName('');
+    playNameInput.focus();
+  });
+
   const soundButton = document.getElementById('sound-toggle');
   function updateSoundButton() {
     soundButton.textContent = G.soundEnabled ? '🔊' : '🔇';
@@ -400,6 +442,82 @@
     leopardCat: '삵', squid: '오징어', duck: '오리', tiger: '호랑이', sunBear: '말레이곰',
     chick: '병아리', cat: '고양이',
   };
+  const FRIEND_DIALOGUE = {
+    turtle: [
+      { text: '사랑해', address: true },
+      { text: '천천히 같이 걸을까?', address: true },
+      { text: '내 등딱지를 봐.' },
+      { text: '나는 거북이야.' },
+    ],
+    penguin: [
+      { text: '사랑해', address: true },
+      { text: '뒤뚱뒤뚱 같이 걸을까?', address: true },
+      { text: '내 몸은 파란색이야.' },
+      { text: '내 날개가 움직여.' },
+    ],
+    fox: [
+      { text: '사랑해', address: true },
+      { text: '같이 꼬리를 흔들까?', address: true },
+      { text: '내 귀는 뾰족해.' },
+      { text: '내 꼬리 끝은 하얘.' },
+    ],
+    brownBear: [
+      { text: '사랑해', address: true },
+      { text: '나랑 손을 흔들까?', address: true },
+      { text: '내 털은 갈색이야.' },
+      { text: '내 귀는 동그래.' },
+    ],
+    lion: [
+      { text: '사랑해', address: true },
+      { text: '반가워, 나는 사자야.', address: true },
+      { text: '내 얼굴에 갈기가 있어.' },
+      { text: '내 갈기가 살랑살랑.' },
+    ],
+    leopardCat: [
+      { text: '사랑해', address: true },
+      { text: '나는 삵이야, 반가워.', address: true },
+      { text: '내 몸에 점무늬가 있어.' },
+      { text: '내 꼬리에 줄무늬가 있어.' },
+    ],
+    squid: [
+      { text: '사랑해', address: true },
+      { text: '나랑 살랑살랑 춤출까?', address: true },
+      { text: '나는 분홍 오징어야.' },
+      { text: '내 다리가 움직여.' },
+    ],
+    duck: [
+      { text: '사랑해', address: true },
+      { text: '나랑 뒤뚱뒤뚱 걸을까?', address: true },
+      { text: '나는 빨간 오리야.' },
+      { text: '내 부리를 봐.' },
+    ],
+    tiger: [
+      { text: '사랑해', address: true },
+      { text: '같이 폴짝 뛰어 볼까?', address: true },
+      { text: '내 털에 줄무늬가 있어.' },
+      { text: '내 꼬리가 길지?' },
+    ],
+    sunBear: [
+      { text: '사랑해', address: true },
+      { text: '방긋, 나랑 웃어 볼까?', address: true },
+      { text: '내 가슴에 밝은 무늬가 있어.' },
+      { text: '내 혀가 쏙 나왔네.' },
+    ],
+    chick: [
+      { text: '사랑해', address: true },
+      { text: '나랑 고개를 까딱할까?', address: true },
+      { text: '나는 노란 병아리야.' },
+      { text: '내 부리는 작아.' },
+    ],
+    cat: [
+      { text: '사랑해', address: true },
+      { text: '야옹, 만나서 반가워.', address: true },
+      { text: '나는 빨간 고양이야.' },
+      { text: '내 귀가 쫑긋.' },
+    ],
+  };
+  let friendTalkReadyAt = 0;
+  let friendLastLines = {};
   const COUNT_WORDS = ['하나씩 주세요', '하나', '둘', '셋'];
   const VEGETABLE_NAMES = { carrot: '당근', cucumber: '오이' };
   // Each request combines picture matching with a quantity from one to three.
@@ -421,10 +539,11 @@
     return guidanceSynth && G.started && G.soundEnabled && !G.paused && !document.hidden && !G.ending;
   }
 
-  function koreanVoice() {
+  function koreanVoice(localOnly = false) {
     if (!guidanceSynth) return null;
     try {
-      const voices = guidanceSynth.getVoices().filter(voice => /^ko(?:[-_]|$)/i.test(voice.lang));
+      const voices = guidanceSynth.getVoices().filter(voice => /^ko(?:[-_]|$)/i.test(voice.lang) &&
+        (!localOnly || voice.localService === true));
       // Web Speech has no quality field; use explicit provider labels when available.
       const score = voice => {
         const label = (voice.name || '') + ' ' + (voice.voiceURI || '');
@@ -451,12 +570,14 @@
     applyMasterGain();
   }
 
-  function speakGuidance(text, allowPendingRequest = false) {
+  function speakGuidance(text, allowPendingRequest = false, localOnly = false) {
     const now = performance.now();
     if (canSpeakGuidance() && text === lastGuidanceText && now - lastGuidanceAt < 1000) return true;
     cancelGuidance();
     if (!canSpeakGuidance()) return false;
-    const voice = koreanVoice();
+    const voice = koreanVoice(localOnly);
+    // A personal name must never reach a remote or implicit default voice.
+    if (localOnly && !voice) return false;
     const generation = guidanceGeneration;
     try {
       const utterance = new GuidanceUtterance(text);
@@ -528,6 +649,32 @@
     }
     setFeedback(text);
     speakGuidance(text);
+  }
+
+  function hasActiveGuidance() {
+    if (guidanceUtterance) return true;
+    try { return !!(guidanceSynth && (guidanceSynth.speaking || guidanceSynth.pending)); }
+    catch (_) { return false; }
+  }
+
+  function talkFriend(name) {
+    const lines = FRIEND_DIALOGUE[name];
+    if (!lines || !G.started || G.paused || document.hidden || G.ending || G.endingPending ||
+        G.requestReadyAt || G.flyingCarrots.length || G.clock < friendTalkReadyAt || hasActiveGuidance()) return false;
+    const previous = friendLastLines[name];
+    let index = Math.floor(Math.random() * (lines.length - (previous === undefined ? 0 : 1)));
+    if (previous !== undefined && index >= previous) index++;
+    const line = lines[index];
+    const text = (line.address ? getCallName() + ' ' : '') + line.text;
+    const personal = !!line.address && hasPlayName();
+    friendLastLines[name] = index;
+    friendTalkReadyAt = G.clock + 1000;
+    setFeedback(FRIEND_LABELS[name] + ' · ' + text);
+    const spoken = speakGuidance(text, false, personal);
+    if (personal && !spoken && canSpeakGuidance()) {
+      speakGuidance('친구야 ' + line.text);
+    }
+    return true;
   }
 
   if (guidanceSynth && typeof guidanceSynth.addEventListener === 'function') {
@@ -2912,6 +3059,8 @@
 
   function resetGame() {
     cancelGuidance();
+    friendTalkReadyAt = 0;
+    friendLastLines = {};
     G.score = 0;
     G.clock = 0;
     G.requestIndex = 0;
@@ -2959,6 +3108,7 @@
     const complete = G.requestItems.length === request.count;
     setFeedback(COUNT_WORDS[G.requestItems.length] + (complete ? '! 고마워요' : ' 줬어요'));
     speakGuidance(COUNT_WORDS[G.requestItems.length]);
+    friendTalkReadyAt = Math.max(friendTalkReadyAt, G.clock + 800);
     G.hintUntil = 0;
     spawnParticles(r.x, r.y - r.size * 0.3, 3, 'heart');
 
@@ -3041,7 +3191,7 @@
       if (!ch.visible || ch.enter < 0.5) continue;
       if (Math.hypot(px - ch.x, py - ch.y) < Math.max(24, ch.size * 0.65)) {
         ch.react = 1;
-        setFeedback(FRIEND_LABELS[name] + ' · 반가워!');
+        talkFriend(name);
         if (name === 'lion') playLionRoar();
         else playSparkle();
         spawnParticles(ch.x, ch.y - ch.size * 0.2, 7, CHARACTER_SPEC[name].particle);

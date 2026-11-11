@@ -49,10 +49,11 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
     addEventListener: (name, fn) => { events[name] = fn; } };
   const elements = {};
   function element(id) {
-    if (!elements[id]) elements[id] = { textContent: '', attributes: {}, hidden: false,
+    if (!elements[id]) elements[id] = { textContent: '', value: '', attributes: {}, hidden: false,
       setAttribute(name, value) { this.attributes[name] = value; },
       addEventListener(name, fn) { this[name] = fn; },
-      focus() { this.focused = true; } };
+      focus() { this.focused = true; },
+      blur() { this.focused = false; } };
     return elements[id];
   }
   const sound = element('sound-toggle');
@@ -79,7 +80,8 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
     matchMedia: () => media,
     localStorage: {
       getItem(key) { if (options.blockStorage) throw Error('Storage unavailable'); return storage[key] || null; },
-      setItem(key, value) { if (options.blockStorage) throw Error('Storage unavailable'); storage[key] = value; }
+      setItem(key, value) { if (options.blockStorage) throw Error('Storage unavailable'); storage[key] = value; },
+      removeItem(key) { if (options.blockStorage) throw Error('Storage unavailable'); delete storage[key]; }
     },
     addEventListener(name, fn) { (windowEvents[name] ||= []).push(fn); } };
   if (options.speech) {
@@ -115,9 +117,14 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   }
   const start = () => element('start-button').click();
   const click = id => element(id).click();
+  const submit = id => {
+    let prevented = false;
+    element(id).submit({ preventDefault() { prevented = true; } });
+    assert(prevented, 'Form submission did not prevent navigation');
+  };
   const visibility = hidden => { document.hidden = hidden; documentEvents.visibilitychange(); };
   return { G, step, advance, tap, resize, sound, gains, destinations, canvas, elements, contexts,
-    start, click, visibility, storage, media, drawnText, api: globalThis.__smokeApi };
+    start, click, submit, visibility, storage, media, drawnText, api: globalThis.__smokeApi };
 
 }
 
@@ -447,6 +454,33 @@ const premiumURIKorean = { ...unknownKorean, voiceURI: 'com.apple.voice.premium.
 const premiumLocalKorean = { ...localKorean, name: 'Korean Premium' };
 const premiumDefaultLocalKorean = { ...premiumLocalKorean, default: true };
 const premiumEnglish = { ...localEnglish, name: 'English Premium' };
+
+function showFriend(game, name) {
+  game.G.carrots = [];
+  friends.forEach(friend => { game.G[friend].visible = friend === name; });
+  const ch = game.G[name];
+  ch.enter = 1;
+  ch.x = ch.targetX = 195;
+  ch.y = ch.targetY = 500;
+  return ch;
+}
+
+function finishSpeech(speech) {
+  const utterance = speech.spoken[speech.spoken.length - 1];
+  if (utterance) { utterance.onstart(); utterance.onend(); }
+}
+
+function tapFriendGreeting(game, speech, name, greeting) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const ch = showFriend(game, name);
+    game.tap(ch.x, ch.y);
+    if (game.G.feedback.includes(greeting + ' ')) return speech.spoken[speech.spoken.length - 1];
+    finishSpeech(speech);
+    game.advance(1100);
+  }
+  throw new Error('Animal did not offer an addressed greeting: ' + name);
+}
+
 for (const [scenario, voices, expected] of [
   ['ordinary local default', [remoteKorean, localKorean, localDefaultKorean], localDefaultKorean],
   ['ordinary local', [remoteKorean, localEnglish, localKorean], localKorean],
@@ -735,6 +769,142 @@ for (const mode of ['muted', 'unavailable']) {
   assert(JSON.stringify([G.feedback, G.hintUntil, G.rabbit.bounce, G.dimming, G.particles]) === endingState && speech.spoken.length === endingSpeech && G.score === 14, 'Ending dialogue changed the flying scene');
 }
 
+// Every animal answers actual taps with varied dialogue without changing the learning request.
+for (const [index, name] of friends.entries()) {
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 30 + index, true, { speech });
+  game.start(); finishSpeech(speech);
+  const seen = new Set();
+  let previous = '';
+  for (let turn = 0; turn < 8; turn++) {
+    game.advance(1100);
+    const ch = showFriend(game, name);
+    const before = JSON.stringify([game.G.score, game.G.requestIndex, game.G.requestItems,
+      game.G.requestReadyAt, game.G.hintUntil, game.api.requestLabel()]);
+    const spokenBefore = speech.spoken.length;
+    game.tap(ch.x, ch.y);
+    assert(speech.spoken.length === spokenBefore + 1 && ch.react === 1, 'Animal tap did not speak and react: ' + name);
+    const reply = speech.spoken[speech.spoken.length - 1].text;
+    assert(reply && reply !== previous, 'Animal repeated its previous line: ' + name);
+    assert(game.G.feedback.includes(reply) && game.elements['learning-status'].textContent.includes(game.api.requestLabel()), 'Animal dialogue hid its reply or the current request: ' + name);
+    assert(JSON.stringify([game.G.score, game.G.requestIndex, game.G.requestItems,
+      game.G.requestReadyAt, game.G.hintUntil, game.api.requestLabel()]) === before, 'Animal dialogue changed learning progress: ' + name);
+    seen.add(reply); previous = reply;
+    finishSpeech(speech);
+    for (let tap = 0; tap < 3; tap++) game.tap(ch.x, ch.y);
+    assert(speech.spoken.length === spokenBefore + 1 && game.G.feedback.includes(reply), 'Rapid animal taps cycled or restarted dialogue: ' + name);
+  }
+  assert(seen.size >= 3, 'Animal did not offer enough dialogue variety: ' + name);
+  assert(Array.from(seen).some(reply => reply.startsWith('친구야 ')) && Array.from(seen).some(reply => !reply.startsWith('친구야 ')), 'Animal did not mix greetings with observation dialogue: ' + name);
+}
+
+// Animal chatter waits for instructions, deliveries and the protected counting beat.
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 60, true, { speech });
+  game.start();
+  let ch = showFriend(game, 'turtle');
+  const first = speech.spoken[0], initialFeedback = game.G.feedback;
+  game.tap(ch.x, ch.y); first.onstart(); game.tap(ch.x, ch.y);
+  assert(speech.spoken.length === 1 && game.G.feedback === initialFeedback && ch.react === 1, 'Animal interrupted queued or playing guidance');
+  first.onend(); game.advance(1100);
+  ch = showFriend(game, 'turtle');
+  game.G.requestIndex = 1; game.G.score = 1; game.G.requestItems = [];
+  game.G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 }];
+  game.tap(100, 300);
+  const inFlightFeedback = game.G.feedback, inFlightSpeech = speech.spoken.length;
+  game.tap(ch.x, ch.y);
+  assert(speech.spoken.length === inFlightSpeech && game.G.feedback === inFlightFeedback, 'Animal interrupted an in-flight delivery');
+  game.advance(400);
+  const count = speech.spoken[speech.spoken.length - 1];
+  assert(count.text === '하나' && game.G.requestItems.length === 1, 'Animal dialogue changed the delivery count');
+  count.onstart(); game.tap(ch.x, ch.y);
+  assert(speech.spoken[speech.spoken.length - 1] === count, 'Animal replaced the spoken count');
+  count.onend(); game.tap(ch.x, ch.y);
+  assert(speech.spoken[speech.spoken.length - 1] === count, 'Animal skipped the brief wait after counting');
+  game.advance(850); ch = showFriend(game, 'turtle'); game.tap(ch.x, ch.y);
+  assert(speech.spoken[speech.spoken.length - 1] !== count && game.G.score === 2 && game.G.requestItems.length === 1, 'Animal did not recover after counting or changed progress');
+}
+
+// Personal names use only a known local Korean voice; other voices say the generic greeting.
+for (const [scenario, voices, namedSpeech, failVoices] of [
+  ['local Korean over remote premium', [premiumKorean, localKorean], true],
+  ['remote Korean', [premiumKorean], false],
+  ['unknown service', [unknownKorean], false],
+  ['empty list', [], false],
+  ['foreign local', [premiumEnglish], false],
+  ['failed voice lookup', [localKorean], false, true],
+]) {
+  const speech = speechMock(voices);
+  speech.failVoices = !!failVoices;
+  const storage = { 'moon-rabbit-play-name': '별이' };
+  const game = createGame(390, 844, 65, true, { speech, storage });
+  game.start(); finishSpeech(speech);
+  const reply = tapFriendGreeting(game, speech, 'fox', '별이야');
+  assert(game.G.feedback.includes('별이야 '), 'Saved nickname was missing from visual dialogue: ' + scenario);
+  assert(reply.text.startsWith(namedSpeech ? '별이야 ' : '친구야 '), 'Nickname speech did not respect the local-only boundary: ' + scenario);
+  if (namedSpeech) assert(reply.voice === localKorean, 'Named dialogue used a remote or unspecified voice');
+  else assert(speech.spoken.every(utterance => !utterance.text.includes('별이')), 'Nickname reached a nonlocal speech request: ' + scenario);
+  finishSpeech(speech);
+  const spokenBefore = speech.spoken.length;
+  speech.change([localKorean]);
+  assert(speech.spoken.length === spokenBefore, 'Late voice availability replayed personal dialogue');
+}
+for (const mode of ['muted', 'unavailable']) {
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 66, true, { speech: mode === 'muted' ? speech : undefined,
+    storage: { 'moon-rabbit-play-name': '별이', 'moon-rabbit-sound': mode === 'muted' ? 'off' : 'on' } });
+  game.start();
+  tapFriendGreeting(game, speech, 'fox', '별이야');
+  assert(game.G.feedback.includes('별이야 ') && speech.spoken.length === 0, 'Silent animal dialogue lost the visual name or unexpectedly spoke: ' + mode);
+}
+
+// Saving, restoring, clearing and blocked storage keep the nickname a browser-only preference.
+for (const [entered, expected] of [
+  ['  하늘\t 별이  ', '하늘 별이'],
+  ['별이', '별이'],
+  ['별이💫12<>_', '별이'],
+  ['가'.repeat(15), '가'.repeat(12)],
+]) {
+  const game = createGame(390, 844, 69, false);
+  game.elements['play-name-input'].value = entered;
+  game.submit('play-name-form');
+  assert(game.storage['moon-rabbit-play-name'] === expected && game.elements['play-name-input'].value === expected, 'Nickname normalization or length limit was not applied');
+  assert(!game.G.started && game.G.score === 0, 'Nickname normalization changed the game state');
+}
+{
+  const storage = {};
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 70, true, { storage, speech });
+  game.elements['play-name-input'].value = '  별이  ';
+  game.submit('play-name-form');
+  assert(storage['moon-rabbit-play-name'] === '별이' && !game.G.started && game.G.score === 0, 'Saving a nickname did not trim it or unexpectedly started play');
+  game.start(); finishSpeech(speech);
+  assert(tapFriendGreeting(game, speech, 'cat', '별이야').text.startsWith('별이야 '), 'Nickname without a final consonant used the wrong vocative');
+  finishSpeech(speech); game.click('home-button');
+  game.elements['play-name-input'].value = '하늘'; game.submit('play-name-form');
+  game.start(); finishSpeech(speech);
+  assert(tapFriendGreeting(game, speech, 'cat', '하늘아').text.startsWith('하늘아 '), 'Nickname with a final consonant used the wrong vocative');
+  finishSpeech(speech); game.click('home-button'); game.click('clear-play-name');
+  assert(!storage['moon-rabbit-play-name'] && game.elements['play-name-input'].value === '', 'Clearing a nickname retained saved or visible input');
+  game.start(); finishSpeech(speech);
+  assert(tapFriendGreeting(game, speech, 'cat', '친구야').text.startsWith('친구야 '), 'Cleared nickname remained in dialogue after a new game');
+  const restored = createGame(390, 844, 71, false, { storage: { 'moon-rabbit-play-name': '하늘' } });
+  assert(restored.elements['play-name-input'].value === '하늘' && !restored.G.started, 'Saved nickname did not restore independently of game state');
+}
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 72, true, { speech, blockStorage: true });
+  game.elements['play-name-input'].value = '별이'; game.submit('play-name-form');
+  assert(!game.storage['moon-rabbit-play-name'], 'Blocked storage unexpectedly persisted a nickname');
+  assert(game.elements['play-name-status'].textContent.includes('이번 놀이'), 'Storage failure did not explain session-only naming');
+  game.start(); finishSpeech(speech);
+  assert(tapFriendGreeting(game, speech, 'duck', '별이야').text.startsWith('별이야 '), 'Storage failure discarded the session nickname');
+  finishSpeech(speech); game.click('home-button'); game.click('clear-play-name');
+  game.start(); finishSpeech(speech);
+  assert(tapFriendGreeting(game, speech, 'duck', '친구야').text.startsWith('친구야 '), 'Storage failure prevented clearing the session nickname');
+}
+
 // Missing audio hardware and speech failures leave the visual game usable and retryable.
 {
   const speech = speechMock([localKorean]); speech.failVoices = true;
@@ -796,4 +966,4 @@ for (const mode of ['muted', 'unavailable']) {
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, picture-card guidance, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 12-animal dialogue variety and counting protection, nickname storage and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
