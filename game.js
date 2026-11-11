@@ -389,29 +389,63 @@
   }
   const playNameInput = document.getElementById('play-name-input');
   const playNameStatus = document.getElementById('play-name-status');
+  const playNameFeedback = document.getElementById('play-name-feedback');
+  const playNamePreview = document.getElementById('play-name-preview');
+  let playNameResult = playName
+    ? { state: 'saved', message: '✓ 저장된 이름이에요' }
+    : { state: 'empty', message: '이름 없이도 놀 수 있어요.' };
   playNameInput.value = playName;
+  function showPlayNameFeedback(state, message, preview = false, invalid = false) {
+    playNameFeedback.setAttribute('data-state', state);
+    playNameStatus.textContent = message;
+    playNamePreview.hidden = !preview || !playName;
+    playNamePreview.textContent = preview && playName ? '부를 이름 · ' + getCallName() : '';
+    playNameInput.setAttribute('aria-invalid', String(invalid));
+  }
+  function showSavedPlayName() {
+    showPlayNameFeedback(playNameResult.state, playNameResult.message, !!playName);
+  }
   function savePlayName(value) {
+    const raw = String(value || '');
+    const nextName = normalizePlayName(raw);
+    if (raw.trim() && !nextName) {
+      showPlayNameFeedback('error', '이름은 글자로 입력해 주세요.', false, true);
+      return false;
+    }
     cancelGuidance();
-    playName = normalizePlayName(value);
+    playName = nextName;
     playNameInput.value = playName;
     let saved = true;
     try {
       if (playName) window.localStorage.setItem(PLAY_NAME_KEY, playName);
       else window.localStorage.removeItem(PLAY_NAME_KEY);
     } catch (_) { saved = false; }
-    playNameStatus.textContent = playName
-      ? (saved ? '저장했어요. 친구를 눌러 들어 보세요.' : '이번 놀이에서 이름을 불러 줄게요.')
-      : '이름 없이도 친구들과 이야기할 수 있어요.';
+    playNameResult = playName
+      ? (saved
+        ? { state: 'saved', message: '✓ 저장됐어요' }
+        : { state: 'session', message: '이번 놀이에서만 불러 줄게요.' })
+      : (saved
+        ? { state: 'empty', message: '이름을 지웠어요.' }
+        : { state: 'error', message: '다음 접속에는 이름이 남아 있을 수 있어요.' });
+    showSavedPlayName();
+    return true;
   }
+  playNameInput.addEventListener('input', () => {
+    // Do not rewrite the field while an IME is composing a name.
+    if (normalizePlayName(playNameInput.value) !== playName) {
+      showPlayNameFeedback('dirty', '아직 저장 전이에요');
+    } else showSavedPlayName();
+  });
   document.getElementById('play-name-form').addEventListener('submit', event => {
     event.preventDefault();
-    savePlayName(playNameInput.value);
-    playNameInput.blur();
+    if (savePlayName(playNameInput.value)) playNameInput.blur();
+    else playNameInput.focus();
   });
   document.getElementById('clear-play-name').addEventListener('click', () => {
     savePlayName('');
     playNameInput.focus();
   });
+  showSavedPlayName();
 
   const soundButton = document.getElementById('sound-toggle');
   function updateSoundButton() {
@@ -726,6 +760,10 @@
   }
 
   function startGame() {
+    if (playNameInput.value !== playName && !savePlayName(playNameInput.value)) {
+      playNameInput.focus();
+      return;
+    }
     G.started = true;
     G.paused = false;
     resetGame();

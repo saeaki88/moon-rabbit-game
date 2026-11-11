@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>달토끼의 당근 모으기</title>
-  <link rel="stylesheet" href="style.css?v=20261112-friend-talk">
+  <link rel="stylesheet" href="style.css?v=20261112-welcome">
 </head>
 <body>
   <canvas id="game" aria-label="달토끼와 채소 나누기. 채소나 친구를 눌러 보세요."></canvas>
@@ -14,36 +14,42 @@
   </div>
   <section id="welcome-panel" class="panel-layer" aria-labelledby="welcome-title">
     <div class="panel welcome-card">
-      <svg class="first-play-picture" viewBox="0 0 180 76" aria-hidden="true">
-        <path d="M27 26 Q48 13 51 30 Q48 47 29 62 Q22 42 27 26" fill="#f49445"/>
-        <path d="M34 24 Q19 5 29 4 L39 20 Q39 -1 46 4 L44 25 Q58 5 61 13 L48 28" fill="#79a85e"/>
-        <path d="M42 49 V36 Q46 29 50 36 V46 Q56 42 59 49 Q65 46 67 54 L65 66 Q63 72 55 72 H49 L34 59 Q30 51 36 53Z" fill="#f8e7cc" stroke="#675847" stroke-width="2"/>
-        <path d="M85 39 H103 M97 33 L104 39 L97 45" fill="none" stroke="#c5d4dd" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-        <ellipse cx="133" cy="20" rx="7" ry="18" fill="#f5ede0" transform="rotate(-12 133 20)"/>
-        <ellipse cx="153" cy="20" rx="7" ry="18" fill="#f5ede0" transform="rotate(12 153 20)"/>
-        <ellipse cx="143" cy="54" rx="21" ry="19" fill="#f5ede0"/>
-        <ellipse cx="143" cy="39" rx="24" ry="19" fill="#f5ede0"/>
-        <g fill="none" stroke="#645f6b" stroke-width="2"><circle cx="133" cy="37" r="8"/><circle cx="153" cy="37" r="8"/><path d="M141 36 H145"/></g>
-        <g fill="#423b49"><circle cx="133" cy="37" r="2"/><circle cx="153" cy="37" r="2"/></g>
-        <path d="M140 47 Q143 51 146 47" fill="none" stroke="#a27478" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      <h1 id="welcome-title">달토끼와 나눠요</h1>
-      <p>토끼가 부탁한 채소를 찾아요.<br>하나, 둘, 셋! 하나씩 주세요.</p>
-      <button id="start-button" class="primary-button" type="button"><span class="action-icon" aria-hidden="true">▶</span><span>같이 놀기</span></button>
-      <p class="grownup-note">그림을 누르면 부탁을 다시 알려 줘요.</p>
-      <details class="name-settings">
-        <summary>보호자 · 이름 불러주기</summary>
-        <form id="play-name-form">
+      <div class="welcome-intro">
+        <svg class="first-play-picture" viewBox="0 0 180 76" aria-hidden="true">
+          <path d="M27 26 Q48 13 51 30 Q48 47 29 62 Q22 42 27 26" fill="#f49445"/>
+          <path d="M34 24 Q19 5 29 4 L39 20 Q39 -1 46 4 L44 25 Q58 5 61 13 L48 28" fill="#79a85e"/>
+          <path d="M42 49 V36 Q46 29 50 36 V46 Q56 42 59 49 Q65 46 67 54 L65 66 Q63 72 55 72 H49 L34 59 Q30 51 36 53Z" fill="#f8e7cc" stroke="#675847" stroke-width="2"/>
+          <path d="M85 39 H103 M97 33 L104 39 L97 45" fill="none" stroke="#c5d4dd" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <ellipse cx="133" cy="20" rx="7" ry="18" fill="#f5ede0" transform="rotate(-12 133 20)"/>
+          <ellipse cx="153" cy="20" rx="7" ry="18" fill="#f5ede0" transform="rotate(12 153 20)"/>
+          <ellipse cx="143" cy="54" rx="21" ry="19" fill="#f5ede0"/>
+          <ellipse cx="143" cy="39" rx="24" ry="19" fill="#f5ede0"/>
+          <g fill="none" stroke="#645f6b" stroke-width="2"><circle cx="133" cy="37" r="8"/><circle cx="153" cy="37" r="8"/><path d="M141 36 H145"/></g>
+          <g fill="#423b49"><circle cx="133" cy="37" r="2"/><circle cx="153" cy="37" r="2"/></g>
+          <path d="M140 47 Q143 51 146 47" fill="none" stroke="#a27478" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h1 id="welcome-title">달토끼와 나눠요</h1>
+        <p class="welcome-description">그림을 보고, 하나씩 나눠요.</p>
+      </div>
+      <form id="play-name-form" class="name-settings">
+        <div class="name-heading">
           <label for="play-name-input">이름 또는 별명</label>
-          <input id="play-name-input" type="text" maxlength="12" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="이름 없이도 놀 수 있어요" aria-describedby="play-name-note">
-          <div class="name-actions">
-            <button class="primary-button" type="submit">저장</button>
-            <button id="clear-play-name" class="secondary-button" type="button">지우기</button>
-          </div>
-          <p id="play-name-note">이름은 이 브라우저에만 저장돼요.<br>기기 한국어 음성이 없으면 “친구야”라고 말해요.</p>
-          <p id="play-name-status" role="status" aria-live="polite"></p>
-        </form>
-      </details>
+          <span>선택</span>
+        </div>
+        <div class="name-entry">
+          <input id="play-name-input" type="text" maxlength="12" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="어떻게 불러 줄까요?" aria-describedby="play-name-note play-name-feedback">
+          <button id="save-play-name" type="submit">저장</button>
+        </div>
+        <div id="play-name-feedback" data-state="empty" role="status" aria-live="polite" aria-atomic="true">
+          <p id="play-name-status">이름 없이도 놀 수 있어요.</p>
+          <p id="play-name-preview" hidden></p>
+        </div>
+        <div class="name-footer">
+          <p id="play-name-note">이름은 이 브라우저에만 저장돼요.</p>
+          <button id="clear-play-name" type="button">이름 지우기</button>
+        </div>
+      </form>
+      <button id="start-button" class="primary-button" type="button"><span class="action-icon" aria-hidden="true">▶</span><span>같이 놀기</span></button>
     </div>
   </section>
   <section id="pause-panel" class="panel-layer" aria-labelledby="pause-title" hidden>
@@ -66,6 +72,6 @@
     </div>
   </section>
   <p id="learning-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
-  <script src="game.js?v=20261112-friend-talk"></script>
+  <script src="game.js?v=20261112-welcome"></script>
 </body>
 </html>

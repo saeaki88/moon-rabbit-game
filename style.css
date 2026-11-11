@@ -99,20 +99,6 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 .secondary-button { color: #f5e6c8; background: #243d52; }
 .panel > .secondary-button { margin-top: 12px; }
 .panel .grownup-note { font-size: 14px; margin-bottom: 0; color: #c5d4dd; }
-.welcome-card { max-height: 100%; overflow-y: auto; touch-action: pan-y; }
-.name-settings { margin-top: 12px; text-align: left; color: #c5d4dd; }
-.name-settings summary { min-height: 36px; padding: 8px 0; font-size: 14px; cursor: pointer; }
-.name-settings label { display: block; margin: 8px 0; font-size: 15px; }
-.name-settings input {
-  width: 100%; min-height: 48px; padding: 10px 12px;
-  border: 1px solid #c5d4dd; border-radius: 12px; background: #f5efdf; color: #23362f;
-  font: inherit; font-size: 17px; -webkit-user-select: text; user-select: text; touch-action: manipulation;
-}
-.name-settings input:focus-visible, .name-settings summary:focus-visible { outline: 3px solid #ffd780; outline-offset: 3px; }
-.name-actions { display: flex; gap: 10px; margin-top: 10px; }
-.name-actions button { min-height: 44px; font-size: 16px; padding: 8px; }
-.name-settings p { font-size: 13px; line-height: 1.5; margin: 10px 0 0; }
-.name-settings #play-name-status:empty { display: none; }
 .ending-layer { align-items: flex-end; background: none; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 .ending-panel { width: min(100%, 460px); padding: 14px 18px; }
 .ending-panel h2 { font-size: 22px; }
@@ -153,4 +139,81 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 @media (orientation: landscape) and (min-width: 480px) and (min-height: 481px) {
   .ending-layer { align-items: center; justify-content: flex-end; padding: 72px 12px 12px; }
   .ending-panel { width: min(320px, 42vw); }
+}
+
+/* The welcome screen keeps the optional name and its saved state in view. */
+#welcome-panel { background: rgba(6, 12, 26, 0.48); }
+.welcome-card {
+  display: grid;
+  grid-template-areas: "intro" "name" "play";
+  gap: 18px;
+  width: min(100%, 380px);
+  max-height: 100%;
+  padding: 22px;
+  background: #13253d;
+  overflow-y: auto;
+  touch-action: pan-y;
+  word-break: keep-all;
+}
+.welcome-intro { grid-area: intro; min-width: 0; }
+.welcome-card .first-play-picture { width: 156px; height: 66px; margin-bottom: 10px; }
+.welcome-card .welcome-description { font-size: 16px; margin: 8px 0 0; color: #c5d4dd; }
+.welcome-card #start-button { grid-area: play; min-height: 60px; }
+.name-settings {
+  grid-area: name;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #536575;
+  border-radius: 18px;
+  background: #1b3249;
+  text-align: left;
+  color: #d4e0e7;
+}
+.name-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.name-heading label { color: #f5e6c8; font-size: 17px; font-weight: 650; }
+.name-heading span { font-size: 12px; color: #b9cbd5; }
+.name-entry { display: flex; align-items: stretch; gap: 8px; }
+.name-entry input {
+  width: 100%; min-width: 0; min-height: 48px; padding: 10px;
+  border: 1px solid #c5d4dd; border-radius: 12px; background: #f5efdf; color: #23362f;
+  font: inherit; font-size: 17px; -webkit-user-select: text; user-select: text; touch-action: manipulation;
+}
+.name-entry input::placeholder { color: #5f6a64; opacity: 1; font-size: 15px; }
+.name-entry input:focus-visible { outline: 3px solid #ffd780; outline-offset: 3px; }
+#save-play-name { flex: 0 0 60px; border: 1px solid #a6bbba; border-radius: 12px; color: #eff5eb; background: #3b5c5a; font-size: 16px; font-weight: 650; }
+#play-name-feedback { min-height: 50px; margin-top: 10px; padding: 5px 0; overflow-wrap: anywhere; }
+.welcome-card #play-name-status { margin: 0; font-size: 14px; line-height: 20px; }
+.welcome-card #play-name-preview { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: #f5e6c8; }
+#play-name-feedback[data-state="saved"] #play-name-status { color: #c3e5b8; font-weight: 650; }
+#play-name-feedback[data-state="dirty"] #play-name-status,
+#play-name-feedback[data-state="session"] #play-name-status,
+#play-name-feedback[data-state="error"] #play-name-status { color: #f4d59b; }
+.name-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.welcome-card #play-name-note { margin: 0; max-width: 160px; font-size: 12px; line-height: 18px; color: #b9cbd5; }
+#clear-play-name { flex: 0 0 auto; min-height: 44px; padding: 6px 2px; border: 0; background: none; color: #c5d4dd; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 359px) {
+  .welcome-card { padding: 16px; gap: 14px; }
+  .welcome-card .first-play-picture { width: 132px; height: 56px; margin-bottom: 8px; }
+  .welcome-card h1 { font-size: 23px; }
+  .name-settings { padding: 12px; }
+  .name-entry { gap: 6px; }
+  #save-play-name { flex-basis: 54px; }
+}
+@media (max-height: 480px) and (max-width: 479px) {
+  #welcome-panel { padding: 72px 10px 12px; }
+  .welcome-card { padding: 14px; gap: 14px; }
+  .welcome-card .first-play-picture { display: none; }
+}
+@media (max-height: 480px) and (min-width: 480px) {
+  #welcome-panel { padding: 12px 76px 12px 16px; }
+  .welcome-card {
+    width: min(100%, 680px); padding: 16px; gap: 14px 18px;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    grid-template-areas: "intro name" "play name";
+    align-items: center;
+  }
+  .welcome-card .first-play-picture { width: 132px; height: 56px; margin-bottom: 8px; }
+  .welcome-card h1 { font-size: 22px; }
+  .welcome-card .welcome-description { font-size: 14px; }
+  .name-settings { padding: 12px; }
 }

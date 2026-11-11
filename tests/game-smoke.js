@@ -81,7 +81,7 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
     localStorage: {
       getItem(key) { if (options.blockStorage) throw Error('Storage unavailable'); return storage[key] || null; },
       setItem(key, value) { if (options.blockStorage) throw Error('Storage unavailable'); storage[key] = value; },
-      removeItem(key) { if (options.blockStorage) throw Error('Storage unavailable'); delete storage[key]; }
+      removeItem(key) { if (options.blockStorage || options.blockStorageRemoval) throw Error('Storage unavailable'); delete storage[key]; }
     },
     addEventListener(name, fn) { (windowEvents[name] ||= []).push(fn); } };
   if (options.speech) {
@@ -511,8 +511,8 @@ for (const [scenario, voices, expected] of [
   assert(speech.cancellations === 0, 'Starting an idle speech engine issued an unnecessary cancel');
 }
 
-// iOS-like unlock: the first speak must occur synchronously inside the start gesture.
-{
+// Auto-saving a draft must preserve the synchronous iOS-like start-gesture speech unlock.
+for (const [draft, blockStorage] of [['', false], ['별이', false], ['하늘', true]]) {
   const speech = speechMock();
   speech.inGesture = false;
   speech.unlocked = false;
@@ -523,11 +523,19 @@ for (const [scenario, voices, expected] of [
     this.unlocked = true;
     normalSpeak.call(this, utterance);
   };
-  const game = createGame(390, 844, 11, true, { speech });
+  const game = createGame(390, 844, 11, true, { speech, blockStorage });
+  if (draft) {
+    game.elements['play-name-input'].value = draft;
+    game.elements['play-name-input'].input({ isComposing: false });
+  }
   speech.inGesture = true;
   game.start();
   speech.inGesture = false;
   assert(speech.unlocked && speech.spoken.length === 1, 'Empty voice list missed the synchronous start-gesture speech opportunity');
+  if (draft) {
+    assert(blockStorage ? !game.storage['moon-rabbit-play-name'] : game.storage['moon-rabbit-play-name'] === draft, 'Starting without pressing save mishandled nickname persistence');
+    assert(game.elements['play-name-feedback'].attributes['data-state'] === (blockStorage ? 'session' : 'saved'), 'Starting without pressing save did not show the correct storage result');
+  }
   assert(speech.spoken[0].voice === undefined && speech.spoken[0].lang === 'ko-KR', 'Initial iOS-style request did not use the Korean language fallback');
   speech.change([localEnglish]);
   assert(speech.spoken.length === 1, 'A foreign voice list retried the pending Korean fallback');
@@ -905,6 +913,92 @@ for (const [entered, expected] of [
   assert(tapFriendGreeting(game, speech, 'duck', '친구야').text.startsWith('친구야 '), 'Storage failure prevented clearing the session nickname');
 }
 
+// The welcome screen distinguishes unsaved input, durable storage and the current call name.
+{
+  const game = createGame(390, 844, 73, false);
+  const input = game.elements['play-name-input'];
+  const feedback = game.elements['play-name-feedback'];
+  const status = game.elements['play-name-status'];
+  const preview = game.elements['play-name-preview'];
+  assert(feedback.attributes['data-state'] === 'empty' && status.textContent === '이름 없이도 놀 수 있어요.' && preview.hidden, 'Initial nickname state falsely indicated a saved name');
+  const composing = '  별이  ';
+  input.value = composing; input.input({ isComposing: true });
+  assert(input.value === composing && !game.storage['moon-rabbit-play-name'], 'Input handling rewrote Korean composition or saved it early');
+  input.input({ isComposing: false });
+  assert(feedback.attributes['data-state'] === 'dirty' && status.textContent === '아직 저장 전이에요' && preview.hidden, 'Draft nickname retained a success state or stale preview');
+  game.submit('play-name-form');
+  assert(feedback.attributes['data-state'] === 'saved' && status.textContent === '✓ 저장됐어요', 'Explicit save did not show a clear success state');
+  assert(!preview.hidden && preview.textContent === '부를 이름 · 별이야' && input.value === '별이', 'Saved nickname preview did not show the normalized vocative');
+  input.value = '하늘'; input.input({ isComposing: false });
+  assert(feedback.attributes['data-state'] === 'dirty' && preview.hidden && game.storage['moon-rabbit-play-name'] === '별이', 'Editing a saved name changed storage or kept the old preview');
+  input.value = '  별이 '; input.input({ isComposing: false });
+  assert(feedback.attributes['data-state'] === 'saved' && status.textContent === '✓ 저장됐어요' && !preview.hidden, 'Returning to the saved value did not restore its saved state');
+  assert(input.value === '  별이 ', 'Status updates rewrote the active input value');
+  game.click('clear-play-name');
+  assert(feedback.attributes['data-state'] === 'empty' && status.textContent === '이름을 지웠어요.' && preview.hidden && input.focused, 'Clearing a name did not confirm removal and restore input focus');
+}
+{
+  const game = createGame(390, 844, 74, false, { storage: { 'moon-rabbit-play-name': '별이' } });
+  const input = game.elements['play-name-input'];
+  assert(game.elements['play-name-feedback'].attributes['data-state'] === 'saved' && game.elements['play-name-status'].textContent === '✓ 저장된 이름이에요', 'Restored nickname was not clearly identified as saved');
+  assert(!game.elements['play-name-preview'].hidden && game.elements['play-name-preview'].textContent === '부를 이름 · 별이야', 'Restored nickname had no call-name preview');
+  input.value = '하늘'; input.input({ isComposing: false });
+  input.value = '별이'; input.input({ isComposing: false });
+  assert(game.elements['play-name-status'].textContent === '✓ 저장된 이름이에요', 'Undoing an edit lost the restored-state message');
+}
+
+// Failed storage never looks successful, while the session name remains usable.
+{
+  const game = createGame(390, 844, 75, false, { blockStorage: true });
+  const input = game.elements['play-name-input'];
+  const status = game.elements['play-name-status'];
+  const feedback = game.elements['play-name-feedback'];
+  const preview = game.elements['play-name-preview'];
+  input.value = '하늘'; game.submit('play-name-form');
+  assert(feedback.attributes['data-state'] === 'session' && status.textContent.includes('이번 놀이에서만') && !status.textContent.includes('✓'), 'Blocked storage displayed a durable-save success');
+  assert(!preview.hidden && preview.textContent === '부를 이름 · 하늘아', 'Session-only save lost its call-name preview');
+  input.value = '별이'; input.input({ isComposing: false });
+  input.value = '하늘'; input.input({ isComposing: false });
+  assert(feedback.attributes['data-state'] === 'session' && !status.textContent.includes('✓'), 'Undoing an edit mislabeled a session-only name as saved');
+}
+{
+  const storage = { 'moon-rabbit-play-name': '별이' };
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 76, true, { storage, speech, blockStorageRemoval: true });
+  game.click('clear-play-name');
+  assert(storage['moon-rabbit-play-name'] === '별이' && game.elements['play-name-input'].value === '', 'Removal failure was not distinguished from the cleared session value');
+  assert(game.elements['play-name-feedback'].attributes['data-state'] === 'error' && !game.elements['play-name-status'].textContent.includes('✓') && game.elements['play-name-preview'].hidden, 'Removal failure displayed success or a stale name preview');
+  game.start(); finishSpeech(speech);
+  assert(tapFriendGreeting(game, speech, 'fox', '친구야').text.startsWith('친구야 '), 'Failed persistent removal kept using the old name in this session');
+}
+
+// Invalid nonempty input preserves the saved name; an intentional blank draft clears it on start.
+for (const draft of ['123💫<>_', '']) {
+  const storage = { 'moon-rabbit-play-name': '별이' };
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 77, true, { storage, speech });
+  const input = game.elements['play-name-input'];
+  input.value = draft; input.input({ isComposing: false });
+  if (draft) {
+    game.submit('play-name-form');
+    assert(game.elements['play-name-feedback'].attributes['data-state'] === 'error' && !game.elements['play-name-status'].textContent.includes('✓'), 'Invalid nickname submission falsely succeeded');
+    assert(input.attributes['aria-invalid'] === 'true' && game.elements['play-name-preview'].hidden, 'Invalid nickname lacked an accessible error state or retained a stale preview');
+    assert(storage['moon-rabbit-play-name'] === '별이' && input.value === draft, 'Invalid nickname erased the previous name or the editable input');
+  }
+  game.start();
+  if (draft) {
+    assert(!game.G.started && speech.spoken.length === 0 && input.focused, 'Invalid draft started play or failed to return focus for correction');
+    input.value = '별이'; input.input({ isComposing: false });
+    assert(input.attributes['aria-invalid'] === 'false', 'Correcting the nickname retained an accessible error state');
+    game.start();
+  }
+  finishSpeech(speech);
+  assert(game.G.started && game.G.score === 0, 'Valid or corrected nickname prevented normal play');
+  assert(draft ? storage['moon-rabbit-play-name'] === '별이' : !storage['moon-rabbit-play-name'], 'Start did not preserve invalid input or clear an intentional blank');
+  const greeting = draft ? '별이야' : '친구야';
+  assert(tapFriendGreeting(game, speech, 'fox', greeting).text.startsWith(greeting + ' '), 'Start used the wrong nickname after draft validation');
+}
+
 // Missing audio hardware and speech failures leave the visual game usable and retryable.
 {
   const speech = speechMock([localKorean]); speech.failVoices = true;
@@ -966,4 +1060,4 @@ for (const [entered, expected] of [
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 12-animal dialogue variety and counting protection, nickname storage and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 12-animal dialogue variety and counting protection, nickname storage, draft/save feedback, start autosave and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
