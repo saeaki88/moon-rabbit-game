@@ -82,6 +82,12 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
       setItem(key, value) { if (options.blockStorage) throw Error('Storage unavailable'); storage[key] = value; }
     },
     addEventListener(name, fn) { (windowEvents[name] ||= []).push(fn); } };
+  if (options.speech) {
+    window.speechSynthesis = options.speech;
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) { this.text = text; }
+    };
+  }
   if (withAudio) window.AudioContext = AudioContext;
   globalThis.document = { hidden: false, getElementById: id => id === 'game' ? canvas : element(id),
     addEventListener(name, fn) { documentEvents[name] = fn; } };
@@ -220,7 +226,7 @@ function runEnding(width, height, ending, seed) {
   assert(friends.every(name => !G[name].visible && G[name].react === 0), 'Replay did not reset all friends');
   assert(G.spawnTimes.length === 0 && G.dimming === 0 && !G.soundEnabled, 'Replay leaked delayed spawns or reset mute');
   assert(G.carrots.length === 1 && new Set(G.characterOrder).size === 12, 'Replay did not restart correctly');
-  assert(G.requestIndex === 0 && G.requestItems.length === 0 && !G.requestReadyAt && !G.hintUntil, 'Replay did not reset the learning request');
+  assert(G.requestIndex === 0 && G.requestItems.length === 0 && !G.requestReadyAt && G.hintUntil > G.clock, 'Replay did not reset the learning request and first-tap guide');
   assert(game.destinations.slice(1).every(destination => destination === gains[0]), 'A sound bypassed the mute gain');
   log('PASS ' + width + 'x' + height + ' ' + ending);
 }
@@ -407,6 +413,258 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   assert(game.gains.length - gainsBefore <= 3, 'Stale BGM scheduled a backlog of notes');
 }
 
+// Speech is optional, uses only a local Korean voice, and never changes a game action.
+{
+  const game = createGame(390, 844, 8, false);
+  game.start();
+  assert(game.G.hintUntil > game.G.clock, 'First request did not show a tap guide');
+  game.advance(3000);
+  assert(game.G.score === 0 && game.G.requestItems.length === 0 && game.G.flyingCarrots.length === 0, 'Tap demonstration collected a vegetable for the child');
+  assert(game.G.hintUntil <= game.G.clock, 'First-tap guide did not finish');
+  game.tap(30, 30);
+  assert(game.G.hintUntil > game.G.clock && game.G.score === 0, 'Silent picture-card tap did not repeat the visual guide');
+}
+
+function speechMock(voices = []) {
+  return { voices, spoken: [], cancellations: 0, events: {},
+    getVoices() { if (this.failVoices) throw Error('Voices unavailable'); return this.voices; },
+    addEventListener(name, fn) { this.events[name] = fn; },
+    cancel() { this.cancellations++; },
+    speak(utterance) { if (this.failSpeak) throw Error('Speech unavailable'); this.spoken.push(utterance); },
+    change(voices) { this.voices = voices; this.events.voiceschanged(); }
+  };
+}
+const localKorean = { name: 'Local Korean', lang: 'ko-KR', localService: true };
+{
+  const remoteKorean = { name: 'Remote Korean', lang: 'ko-KR', localService: false, default: true };
+  const localEnglish = { name: 'Local English', lang: 'en-US', localService: true, default: true };
+  const speech = speechMock([remoteKorean, localEnglish]);
+  const game = createGame(390, 844, 1, true, { speech });
+  game.start();
+  assert(speech.spoken.length === 0 && game.G.carrots.length === 1, 'Missing local Korean voice broke play or used a fallback');
+  speech.change([remoteKorean, localKorean, localEnglish]);
+  assert(speech.spoken.length === 1 && speech.spoken[0].voice === localKorean, 'Late local Korean voice was not selected');
+  assert(speech.spoken[0].text === '당근 한 개 주세요', 'Initial request did not use spoken Korean quantity');
+  speech.change([localKorean]);
+  assert(speech.spoken.length === 1, 'Voice list update repeated an already spoken request');
+}
+
+// A delayed voice must not revive an instruction after the child acts or leaves.
+for (const action of ['pickup', 'pause', 'home', 'hidden', 'mute', 'next-request']) {
+  const speech = speechMock();
+  const game = createGame(390, 844, 2, true, { speech });
+  game.start(); game.advance(200);
+  if (action === 'pickup' || action === 'next-request') {
+    const item = game.G.carrots[0];
+    game.tap(item.x, item.y);
+    if (action === 'next-request') game.advance(2300);
+  }
+  if (action === 'pause') game.click('pause-toggle');
+  if (action === 'home') game.click('home-button');
+  if (action === 'hidden') game.visibility(true);
+  if (action === 'mute') game.sound.click();
+  speech.change([localKorean]);
+  assert(speech.spoken.length === 0, 'Late voice revived the initial request after ' + action);
+  if (action === 'pickup') {
+    game.advance(400);
+    assert(game.G.score === 1, 'Silent guidance prevented delivery');
+  }
+}
+{
+  const speech = speechMock();
+  const game = createGame(390, 844, 3, true, { speech });
+  game.start(); game.click('home-button'); game.start();
+  speech.change([localKorean]);
+  assert(speech.spoken.length === 1, 'Restart retained multiple pending instructions');
+}
+
+// Picture-card taps repeat guidance without collecting, and old callbacks cannot change new audio.
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 4, true, { speech });
+  game.start();
+  const first = speech.spoken[0];
+  assert(first.lang === 'ko-KR' && first.rate >= 0.6 && first.rate < 1 && first.volume > 0 && first.volume <= 1, 'Speech did not use a gentle Korean voice');
+  first.onstart();
+  assert(game.gains[0].gain.value === 0.25, 'Speaking did not lower existing audio');
+  game.tap(30, 30);
+  assert(speech.spoken.length === 1, 'Rapid picture-card tap restarted the instruction');
+  game.advance(1100); game.tap(30, 30);
+  assert(speech.spoken.length === 2 && game.G.score === 0 && game.G.flyingCarrots.length === 0, 'Picture-card tap did not repeat guidance independently of collection');
+  assert(game.G.hintUntil > game.G.clock, 'Picture-card tap did not restore a visual hint');
+  const second = speech.spoken[1];
+  second.onstart(); first.onend(); first.onerror();
+  assert(game.gains[0].gain.value === 0.25, 'Old speech callback changed the new speech volume');
+  game.sound.click(); second.onend();
+  assert(game.gains[0].gain.value === 0, 'Speech callback overrode mute');
+  game.sound.click();
+  assert(speech.spoken.length === 3, 'Unmute did not read the current request');
+  const third = speech.spoken[2]; third.onstart(); third.onend();
+  assert(game.gains[0].gain.value === 1, 'Completed speech did not restore audio');
+  game.click('pause-toggle'); game.tap(30, 30);
+  assert(speech.spoken.length === 3 && game.gains[0].gain.value === 0, 'Pause allowed instructions or audio');
+  game.click('resume-button');
+  assert(speech.spoken.length === 4, 'Resume did not read the current request');
+  const resumed = speech.spoken[3]; resumed.onstart();
+  const cancellations = speech.cancellations;
+  game.click('home-button'); resumed.onend();
+  assert(speech.cancellations > cancellations && !game.G.started && game.contexts[0].state === 'closed', 'Home kept speech or game audio alive');
+}
+
+// Actual deliveries count aloud; each new request uses natural one-to-three wording.
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 5, true, { speech });
+  game.start();
+  const quantities = ['한', '두', '세'];
+  const counts = ['하나', '둘', '셋'];
+  for (let round = 0; round < 3; round++) {
+    const request = requests[round];
+    const label = request.type === 'carrot' ? '당근' : '오이';
+    assert(speech.spoken[speech.spoken.length - 1].text === label + ' ' + quantities[round] + ' 개 주세요', 'Next request used the wrong spoken quantity');
+    for (let count = 1; count <= request.count; count++) {
+      game.advance(1100);
+      const item = game.G.carrots.find(value => value.type === request.type);
+      assert(item, 'Speech prevented the next choice from appearing');
+      const cancellations = speech.cancellations;
+      game.tap(item.x, item.y);
+      assert(speech.cancellations > cancellations, 'Pickup did not cancel the previous instruction');
+      game.advance(400);
+      assert(speech.spoken[speech.spoken.length - 1].text === counts[count - 1], 'Delivery did not count the visible quantity');
+    }
+    game.advance(1850);
+  }
+  game.G.score = 13; game.G.requestIndex = 5; game.G.requestItems = ['cucumber', 'cucumber']; game.G.requestReadyAt = 0;
+  game.G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 }];
+  game.tap(100, 300); game.advance(400);
+  const last = speech.spoken[speech.spoken.length - 1]; last.onstart();
+  const cancellations = speech.cancellations;
+  game.advance(1300); last.onend();
+  assert(game.G.ending && speech.cancellations > cancellations && game.gains[0].gain.value === 1, 'Ending retained an instruction or reduced audio volume');
+}
+
+// Both rabbits answer with the remaining quantity while keeping delivery and rewards separate.
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 15, true, { speech });
+  const { G, tap, advance } = game;
+  const mainRabbit = () => tap(G.rabbit.x, G.rabbit.y);
+  const moonRabbit = () => tap(G.moonX, G.moonY);
+  const lastText = () => speech.spoken[speech.spoken.length - 1].text;
+  game.start(); advance(200);
+  const tutorial = G.carrots[0];
+  tap(tutorial.x, tutorial.y); advance(400); advance(1800); advance(150);
+  assert(G.requestIndex === 1 && G.requestItems.length === 0, 'Rabbit dialogue did not reach the two-item request');
+  const scoreBefore = G.score;
+  mainRabbit();
+  assert(lastText() === '오이 두 개 찾아 줘' && G.feedback === lastText(), 'Main rabbit did not ask for the initial quantity');
+  assert(G.rabbit.bounce === 1 && G.rabbit.happy === 2 && G.score === scoreBefore, 'Dialogue lost the main rabbit reaction or added score');
+  const spokenBefore = speech.spoken.length;
+  for (let i = 0; i < 4; i++) { mainRabbit(); moonRabbit(); }
+  assert(speech.spoken.length === spokenBefore, 'Repeated rabbit taps restarted the same dialogue within the cooldown');
+  assert(G.dimming === 0.3 && G.score === scoreBefore, 'Moon dialogue lost its reaction or changed score');
+  advance(1100); moonRabbit();
+  assert(speech.spoken.length === spokenBefore + 1 && lastText() === '오이 두 개 찾아 줘', 'Moon rabbit could not repeat dialogue after the cooldown');
+  assert(G.hintUntil === G.clock + 2800, 'Rabbit dialogue did not renew the visual guide');
+
+  const correct = G.carrots.find(item => item.type === 'cucumber');
+  tap(correct.x, correct.y); advance(100);
+  const inFlightSpeech = speech.spoken.length, inFlightFeedback = G.feedback;
+  mainRabbit(); moonRabbit();
+  assert(speech.spoken.length === inFlightSpeech && G.feedback === inFlightFeedback, 'In-flight dialogue announced a stale remaining quantity');
+  assert(G.flyingCarrots.length === 1 && G.score === scoreBefore, 'Rabbit taps changed an in-flight delivery');
+  advance(300); mainRabbit();
+  assert(lastText() === '오이 한 개 더 찾아 줘' && G.requestItems.length === 1 && G.score === scoreBefore + 1, 'Dialogue repeated the whole goal instead of the remaining quantity');
+  advance(1200);
+  const final = G.carrots.find(item => item.type === 'cucumber');
+  tap(final.x, final.y); advance(400);
+  const completionDeadline = G.requestReadyAt;
+  advance(400); mainRabbit();
+  assert(lastText() === '고마워' && G.requestItems.length === 2 && G.score === 3, 'Completed request did not thank the child without adding score');
+  assert(G.requestReadyAt === G.clock + 1800 && G.requestReadyAt > completionDeadline, 'Thank-you dialogue did not preserve the completed request long enough');
+  advance(1100); moonRabbit();
+  assert(lastText() === '고마워' && G.requestIndex === 1 && G.requestReadyAt === G.clock + 1800, 'Moon rabbit did not share completed-request dialogue');
+}
+
+// Three-item requests also use the current number still needed, independently of total score.
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 16, true, { speech });
+  const { G, tap } = game;
+  game.start();
+  G.requestIndex = 2; G.score = 3; G.requestItems = []; G.carrots = [];
+  tap(G.rabbit.x, G.rabbit.y);
+  assert(speech.spoken[speech.spoken.length - 1].text === '당근 세 개 찾아 줘', 'Three-item dialogue used the wrong quantity');
+  G.requestItems = ['carrot']; G.score = 4;
+  tap(G.moonX, G.moonY);
+  assert(speech.spoken[speech.spoken.length - 1].text === '당근 두 개 더 찾아 줘', 'Two remaining items were announced incorrectly');
+  G.requestItems.push('carrot'); G.score = 5;
+  tap(G.rabbit.x, G.rabbit.y);
+  assert(speech.spoken[speech.spoken.length - 1].text === '당근 한 개 더 찾아 줘' && G.score === 5, 'One remaining item was announced incorrectly');
+}
+
+// Muted or unavailable speech still gives the same visual reply and tap guide.
+for (const mode of ['muted', 'unavailable']) {
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 17, true, mode === 'muted' ? { speech } : {});
+  const { G, tap } = game;
+  game.start();
+  if (mode === 'muted') game.sound.click();
+  G.requestIndex = 1; G.score = 2; G.requestItems = ['cucumber']; G.carrots = [];
+  const spokenBefore = speech.spoken.length;
+  tap(G.rabbit.x, G.rabbit.y); tap(G.moonX, G.moonY);
+  assert(speech.spoken.length === spokenBefore, 'Silent rabbit dialogue spoke in ' + mode + ' mode');
+  assert(G.feedback === '오이 한 개 더 찾아 줘' && G.hintUntil === G.clock + 2800, 'Silent rabbit dialogue lost its reply or visual guide');
+  assert(game.elements['learning-status'].textContent.includes(G.feedback) && G.score === 2, 'Silent reply was unavailable to status feedback or changed progress');
+}
+
+// The final waiting period accepts only the rabbits; the flight accepts no dialogue.
+{
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 18, true, { speech });
+  const { G, tap, advance } = game;
+  game.start();
+  G.score = 13; G.requestIndex = 5; G.requestItems = ['cucumber', 'cucumber']; G.requestReadyAt = 0;
+  G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'cucumber', wobble: 0 }];
+  tap(100, 300); advance(400);
+  assert(G.endingPending && G.score === 14, 'Final delivery did not enter its waiting period');
+  G.lion.enter = 1; G.lion.x = G.lion.targetX; G.lion.y = G.lion.targetY; G.lion.react = 0;
+  const beforeOtherTap = JSON.stringify([G.feedback, G.hintUntil, G.endingStartAt, G.particles]);
+  const beforeSpeech = speech.spoken.length;
+  tap(G.lion.x, G.lion.y); tap(30, 30); tap(20, 300);
+  assert(G.lion.react === 0 && JSON.stringify([G.feedback, G.hintUntil, G.endingStartAt, G.particles]) === beforeOtherTap && speech.spoken.length === beforeSpeech, 'Non-rabbit input remained active during the final wait');
+  const originalDeadline = G.endingStartAt;
+  advance(400); tap(G.rabbit.x, G.rabbit.y);
+  assert(speech.spoken[speech.spoken.length - 1].text === '고마워' && G.endingStartAt === G.clock + 1200 && G.endingStartAt > originalDeadline, 'Final rabbit dialogue did not preserve its thank-you period');
+  const mainDeadline = G.endingStartAt;
+  advance(300); tap(G.moonX, G.moonY);
+  assert(G.endingStartAt > mainDeadline && G.feedback === '고마워' && G.score === 14, 'Final moon dialogue did not keep the completed count');
+  advance(1250);
+  assert(G.ending && !G.endingPending, 'Final thank-you wait did not finish');
+  const endingState = JSON.stringify([G.feedback, G.hintUntil, G.rabbit.bounce, G.dimming, G.particles]);
+  const endingSpeech = speech.spoken.length;
+  tap(G.rabbit.x, G.rabbit.y); tap(G.moonX, G.moonY);
+  assert(JSON.stringify([G.feedback, G.hintUntil, G.rabbit.bounce, G.dimming, G.particles]) === endingState && speech.spoken.length === endingSpeech && G.score === 14, 'Ending dialogue changed the flying scene');
+}
+
+// Missing audio hardware and speech failures leave the visual game usable.
+{
+  const speech = speechMock([localKorean]); speech.failVoices = true;
+  const game = createGame(390, 844, 6, true, { speech }); game.start();
+  assert(game.G.started && speech.spoken.length === 0, 'Voice enumeration failure blocked start');
+  speech.failVoices = false; speech.failSpeak = true;
+  game.tap(30, 30);
+  assert(game.gains[0].gain.value === 1, 'Speech failure left existing audio lowered');
+  speech.failSpeak = false; game.tap(30, 30);
+  assert(speech.spoken.length === 1, 'Speech failed to recover after a blocked call');
+  speech.spoken[0].onstart(); speech.spoken[0].onerror();
+  assert(game.gains[0].gain.value === 1, 'Speech error failed to restore audio');
+  const noAudioSpeech = speechMock([localKorean]);
+  const noAudio = createGame(390, 844, 7, false, { speech: noAudioSpeech });
+  noAudio.start(); noAudioSpeech.spoken[0].onstart(); noAudioSpeech.spoken[0].onend();
+  assert(noAudio.G.started && noAudio.contexts.length === 0, 'Speech depended on Web Audio availability');
+}
+
 // Rendering is side-effect free, and particle motion is independent of refresh rate.
 {
   const results = [];
@@ -445,4 +703,4 @@ const sizes = [[390, 844], [844, 390], [320, 568], [568, 320], [390, 390], [320,
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, optional local Korean speech, remaining-quantity rabbit dialogue, picture-card guidance, HiDPI, motion and particle regressions');

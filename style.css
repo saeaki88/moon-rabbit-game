@@ -78,17 +78,23 @@ button { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-colo
 }
 h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 .panel p { font-size: 18px; line-height: 1.55; margin: 12px 0 18px; }
-.veggie-pair { font-size: 46px; margin-bottom: 12px; }
+.first-play-picture { display: block; width: 180px; height: 76px; margin: 0 auto 12px; }
 .panel-symbol { font-size: 42px; margin-bottom: 8px; }
 .primary-button, .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   min-height: 56px;
   width: 100%;
   border-radius: 18px;
   border: 1px solid #e5d9b9;
-  padding: 12px 16px;
+  padding: 9px 16px;
   font-size: 20px;
   font-weight: 650;
 }
+.action-icon { flex: 0 0 auto; font-size: 32px; line-height: 1; }
+.sleep-icon { font-size: 28px; }
 .primary-button { color: #23362f; background: #e6ddb9; }
 .secondary-button { color: #f5e6c8; background: #243d52; }
 .panel > .secondary-button { margin-top: 12px; }
@@ -99,6 +105,8 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 .ending-panel p { font-size: 15px; margin: 6px 0 12px; }
 .ending-actions { display: flex; gap: 10px; }
 .ending-actions button { font-size: 17px; padding: 10px 8px; }
+.ending-actions .action-icon { font-size: 26px; }
+.ending-actions .sleep-icon { font-size: 23px; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -106,7 +114,8 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 @media (max-height: 480px) and (max-width: 479px) {
   .panel-layer { padding: 12px 18px; }
   .panel { padding: 16px; }
-  .veggie-pair, .panel-symbol { font-size: 30px; margin-bottom: 4px; }
+  .first-play-picture { width: 104px; height: 44px; margin-bottom: 4px; }
+  .panel-symbol { font-size: 30px; margin-bottom: 4px; }
   .panel p { font-size: 16px; margin: 7px 0 10px; }
   .panel .grownup-note { font-size: 13px; }
   .ending-panel { padding: 14px 18px; }
@@ -115,7 +124,8 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 @media (orientation: landscape) and (max-height: 480px) and (min-width: 480px) {
   .panel-layer { padding: 12px 76px; }
   .panel { padding: 16px 22px; width: 380px; }
-  .veggie-pair, .panel-symbol { font-size: 30px; margin-bottom: 4px; }
+  .first-play-picture { width: 104px; height: 44px; margin-bottom: 4px; }
+  .panel-symbol { font-size: 30px; margin-bottom: 4px; }
   .panel p { font-size: 16px; margin: 7px 0 10px; }
   .panel .grownup-note { font-size: 13px; }
   .ending-layer { align-items: center; justify-content: flex-end; padding: 72px 12px 12px; }
@@ -123,6 +133,8 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
   .ending-panel h2 { font-size: 19px; }
   .ending-panel p { font-size: 14px; margin: 3px 0 7px; }
   .ending-actions button { min-height: 48px; }
+  .ending-actions { gap: 8px; }
+  .ending-actions button { gap: 5px; font-size: 16px; }
 }
 @media (orientation: landscape) and (min-width: 480px) and (min-height: 481px) {
   .ending-layer { align-items: center; justify-content: flex-end; padding: 72px 12px 12px; }

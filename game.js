@@ -105,6 +105,27 @@
   // ===== Audio =====
   let audioCtx = null;
   let masterGain = null;
+  let guidanceSynth = null;
+  let GuidanceUtterance = null;
+  let guidanceGeneration = 0;
+  let guidanceUtterance = null;
+  let guidanceDucked = false;
+  let pendingRequestGuidance = null;
+  let lastGuidanceText = '';
+  let lastGuidanceAt = -Infinity;
+  try {
+    if (window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function') {
+      guidanceSynth = window.speechSynthesis;
+      GuidanceUtterance = window.SpeechSynthesisUtterance;
+    }
+  } catch (_) {}
+
+  function applyMasterGain() {
+    if (masterGain && audioCtx) {
+      const volume = G.soundEnabled && !G.paused ? (guidanceDucked ? 0.25 : 1) : 0;
+      masterGain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    }
+  }
 
   function ensureAudio() {
     if (!audioCtx) {
@@ -113,7 +134,7 @@
       try {
         audioCtx = new Audio();
         masterGain = audioCtx.createGain();
-        masterGain.gain.setValueAtTime(G.soundEnabled ? 1 : 0, audioCtx.currentTime);
+        applyMasterGain();
         masterGain.connect(audioCtx.destination);
       } catch (_) {
         audioCtx = null;
@@ -357,13 +378,15 @@
     const label = G.soundEnabled ? '소리 끄기' : '소리 켜기';
     soundButton.setAttribute('aria-label', label);
     soundButton.title = label;
-    if (masterGain) masterGain.gain.setValueAtTime(G.soundEnabled && !G.paused ? 1 : 0, audioCtx.currentTime);
+    applyMasterGain();
   }
   soundButton.addEventListener('click', () => {
     G.soundEnabled = !G.soundEnabled;
     try { window.localStorage.setItem('moon-rabbit-sound', G.soundEnabled ? 'on' : 'off'); } catch (_) {}
     if (G.started && !G.paused) { ensureAudio(); startBGM(); }
     updateSoundButton();
+    if (G.soundEnabled) speakRequest();
+    else cancelGuidance();
   });
   updateSoundButton();
 
@@ -394,6 +417,114 @@
     return VEGETABLE_NAMES[request.type] + ' ' + request.count + '개 주세요';
   }
 
+  function canSpeakGuidance() {
+    return guidanceSynth && G.started && G.soundEnabled && !G.paused && !document.hidden && !G.ending;
+  }
+
+  function localKoreanVoice() {
+    if (!guidanceSynth) return null;
+    try {
+      const voices = guidanceSynth.getVoices().filter(voice => voice.localService === true && /^ko(?:[-_]|$)/i.test(voice.lang));
+      return voices.find(voice => voice.default) || voices[0] || null;
+    } catch (_) { return null; }
+  }
+
+  function cancelGuidance() {
+    guidanceGeneration++;
+    pendingRequestGuidance = null;
+    guidanceUtterance = null;
+    guidanceDucked = false;
+    lastGuidanceText = '';
+    lastGuidanceAt = -Infinity;
+    if (guidanceSynth) {
+      try { guidanceSynth.cancel(); } catch (_) {}
+    }
+    applyMasterGain();
+  }
+
+  function speakGuidance(text) {
+    const now = performance.now();
+    if (canSpeakGuidance() && text === lastGuidanceText && now - lastGuidanceAt < 1000) return true;
+    cancelGuidance();
+    if (!canSpeakGuidance()) return false;
+    const voice = localKoreanVoice();
+    // No default or remote voice fallback: pictures remain the primary guide.
+    if (!voice) return false;
+    const generation = guidanceGeneration;
+    try {
+      const utterance = new GuidanceUtterance(text);
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+      utterance.rate = 0.88;
+      utterance.pitch = 1;
+      utterance.volume = 0.65;
+      utterance.onstart = () => {
+        if (generation !== guidanceGeneration) return;
+        if (!canSpeakGuidance()) { cancelGuidance(); return; }
+        guidanceDucked = true;
+        applyMasterGain();
+      };
+      const finish = () => {
+        if (generation !== guidanceGeneration) return;
+        guidanceUtterance = null;
+        guidanceDucked = false;
+        applyMasterGain();
+      };
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      guidanceUtterance = utterance;
+      lastGuidanceText = text;
+      lastGuidanceAt = now;
+      guidanceSynth.speak(utterance);
+      return true;
+    } catch (_) {
+      cancelGuidance();
+      return false;
+    }
+  }
+
+  function speakRequest(allowPending = false) {
+    if (!canSpeakGuidance() || G.endingPending || G.requestReadyAt || G.flyingCarrots.length) return;
+    const request = currentRequest();
+    const quantity = ['', '한', '두', '세'][request.count];
+    const text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개 주세요';
+    if (!speakGuidance(text) && allowPending && canSpeakGuidance() && !localKoreanVoice()) {
+      pendingRequestGuidance = { generation: guidanceGeneration, index: G.requestIndex, score: G.score };
+    }
+  }
+
+  function talkRabbit() {
+    if (!G.started || G.paused || document.hidden || G.ending || G.flyingCarrots.length) return;
+    const request = currentRequest();
+    const remaining = Math.max(0, request.count - G.requestItems.length);
+    let text = '고마워';
+    if (remaining) {
+      const quantity = ['', '한', '두', '세'][remaining];
+      text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개' +
+        (G.requestItems.length ? ' 더' : '') + ' 찾아 줘';
+      G.hintUntil = G.clock + 2800;
+    } else if (G.endingPending) {
+      G.endingStartAt = G.clock + 1200;
+    } else {
+      G.requestReadyAt = G.clock + 1800;
+    }
+    setFeedback(text);
+    speakGuidance(text);
+  }
+
+  if (guidanceSynth && typeof guidanceSynth.addEventListener === 'function') {
+    guidanceSynth.addEventListener('voiceschanged', () => {
+      const pending = pendingRequestGuidance;
+      if (!pending) return;
+      if (pending.generation !== guidanceGeneration || pending.index !== G.requestIndex || pending.score !== G.score ||
+          !canSpeakGuidance() || G.endingPending || G.requestReadyAt || G.flyingCarrots.length) {
+        pendingRequestGuidance = null;
+        return;
+      }
+      speakRequest(true);
+    });
+  }
+
   function syncPanels() {
     welcomePanel.hidden = G.started;
     pausePanel.hidden = !G.paused;
@@ -409,6 +540,7 @@
   function setPaused(paused) {
     if (!G.started || G.paused === paused) return;
     G.paused = paused;
+    if (paused) cancelGuidance();
     if (audioCtx) {
       if (paused) audioCtx.suspend().catch(() => {});
       else {
@@ -421,6 +553,7 @@
     updateSoundButton();
     syncPanels();
     document.getElementById(paused ? 'resume-button' : 'pause-toggle').focus();
+    if (!paused) speakRequest();
   }
 
   function startGame() {
@@ -433,9 +566,11 @@
     updateSoundButton();
     syncPanels();
     pauseButton.focus();
+    speakRequest(true);
   }
 
   function goHome() {
+    cancelGuidance();
     setPaused(true);
     // Discard queued ending notes so a new game cannot resume the previous song.
     if (masterGain) masterGain.disconnect();
@@ -2462,6 +2597,7 @@
     // Always place the requested item first: a crowded viewport must remain playable.
     const type = currentRequest().type;
     spawnCarrot(type);
+    if (G.carrots.length && G.score === 0) G.hintUntil = G.clock + 2800;
     if (G.carrots.length && G.requestIndex > 0) {
       spawnCarrot(type === 'carrot' ? 'cucumber' : 'carrot');
     }
@@ -2514,14 +2650,17 @@
   }
 
   // ===== The Rabbit's Request =====
+  function requestPanelBounds() {
+    return { x: 12, y: 12, width: Math.min(230, viewport.width - 140), height: viewport.height <= 480 ? 64 : 102 };
+  }
+
   function drawScore() {
-    const x = 12, y = 12, width = Math.min(230, viewport.width - 140);
+    const { x, y, width, height } = requestPanelBounds();
     const compact = viewport.height <= 480;
-    const height = compact ? 64 : 102;
-    const rowY = compact ? 32 : 53;
+    const rowY = compact ? 32 : 54;
     const count = G.requestItems.length;
     const request = currentRequest();
-    ctx.fillStyle = 'rgba(15, 31, 50, 0.94)';
+    ctx.fillStyle = '#f0e6cf';
     ctx.beginPath();
     ctx.moveTo(x + 16, y);
     ctx.lineTo(x + width - 16, y);
@@ -2533,30 +2672,75 @@
     ctx.lineTo(x, y + 16);
     ctx.quadraticCurveTo(x, y, x + 16, y);
     ctx.fill();
-    ctx.fillStyle = C.moon;
+    // Match the rabbit and vegetables on the field; reading is optional.
+    drawRabbitAt(x + 27, y + (compact ? 44 : 67), compact ? 23 : 28, 0, {});
+    ctx.fillStyle = '#344c43';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.font = `${compact ? 13 : 16}px -apple-system, sans-serif`;
-    ctx.fillText(requestLabel(), x + 12, y + (compact ? 12 : 21), width - 24);
-    ctx.font = `bold ${compact ? 22 : 28}px -apple-system, sans-serif`;
-    ctx.fillText(String(count), x + 14, y + rowY);
-    ctx.font = '12px -apple-system, sans-serif';
-    ctx.fillText('개', x + 33, y + rowY + 3);
-    const spacing = (width - 96) / 2;
-    for (let i = 0; i < request.count; i++) {
-      const px = x + 72 + i * spacing;
-      circle(px, y + rowY, compact ? 11 : 16, '#32495b');
-      ctx.globalAlpha = i < count ? 1 : 0.45;
-      drawVeggieShape(request.type, px, y + rowY, compact ? 22 : 30, 0);
-      ctx.globalAlpha = 1;
+    if (!compact) {
+      ctx.font = '14px -apple-system, sans-serif';
+      ctx.fillText(requestLabel(), x + 12, y + 14, width - 24);
     }
-    ctx.fillStyle = '#c5d4dd';
-    ctx.font = `${compact ? 12 : 14}px -apple-system, sans-serif`;
-    ctx.fillText(G.feedback, x + 12, y + height - (compact ? 11 : 18), width - 24);
+    const spacing = (width - 60) / request.count;
+    for (let i = 0; i < request.count; i++) {
+      const px = x + 56 + (i + 0.5) * spacing;
+      const filled = i < count;
+      circle(px, y + rowY, Math.min(compact ? 23 : 27, spacing / 2 - 3), filled ? '#d1dfbc' : '#fff9e9');
+      drawVeggieShape(request.type, px, y + rowY, compact ? 44 : 56, 0);
+      if (filled) {
+        const bx = px + 10, by = y + rowY + (compact ? 15 : 19);
+        circle(bx, by, 8, '#537750');
+        ctx.strokeStyle = '#fff9e9';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(bx - 4, by);
+        ctx.lineTo(bx - 1, by + 3);
+        ctx.lineTo(bx + 4, by - 3);
+        ctx.stroke();
+      }
+    }
+    if (!compact) {
+      ctx.fillStyle = '#344c43';
+      ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillText(G.feedback, x + 12, y + height - 12, width - 24);
+    }
+  }
+
+  function drawTapGuide(c) {
+    // Two small taps in place, never a drag toward the rabbit.
+    const lift = G.reducedMotion ? 0 : (1 - Math.cos((G.hintUntil - G.clock) / 1400 * Math.PI * 2)) * 2;
+    ctx.save();
+    ctx.translate(c.x + c.size * 0.3, c.y + c.size * 0.2 + lift);
+    ctx.scale(0.75, 0.75);
+    ctx.fillStyle = '#f8e7cc';
+    ctx.strokeStyle = '#675847';
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-4, 22);
+    ctx.lineTo(-4, 0);
+    ctx.quadraticCurveTo(0, -8, 5, 0);
+    ctx.lineTo(5, 14);
+    ctx.quadraticCurveTo(10, 9, 14, 16);
+    ctx.quadraticCurveTo(19, 12, 23, 19);
+    ctx.quadraticCurveTo(29, 17, 29, 25);
+    ctx.lineTo(27, 35);
+    ctx.quadraticCurveTo(25, 42, 18, 42);
+    ctx.lineTo(7, 42);
+    ctx.quadraticCurveTo(2, 41, -2, 36);
+    ctx.lineTo(-12, 26);
+    ctx.quadraticCurveTo(-15, 19, -9, 19);
+    ctx.lineTo(-4, 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ===== Fly to Moon Logic =====
   function startFlyToMoon() {
+    cancelGuidance();
     if (G.ending) return;
     G.ending = true;
     G.endingPending = false;
@@ -2705,6 +2889,7 @@
   }
 
   function resetGame() {
+    cancelGuidance();
     G.score = 0;
     G.clock = 0;
     G.requestIndex = 0;
@@ -2751,6 +2936,7 @@
     G.requestItems.push(type);
     const complete = G.requestItems.length === request.count;
     setFeedback(COUNT_WORDS[G.requestItems.length] + (complete ? '! 고마워요' : ' 줬어요'));
+    speakGuidance(COUNT_WORDS[G.requestItems.length]);
     G.hintUntil = 0;
     spawnParticles(r.x, r.y - r.size * 0.3, 3, 'heart');
 
@@ -2770,20 +2956,36 @@
   }
 
   function handleTap(px, py) {
-    if (!G.started || G.paused || document.hidden || G.ending || G.endingPending) return;
+    if (!G.started || G.paused || document.hidden || G.ending) return;
+    const r = G.rabbit;
+    const moonHit = Math.hypot(px - G.moonX, py - G.moonY) < G.moonR * 1.3;
+    const rabbitHit = Math.hypot(px - r.x, py - r.y) < Math.max(28, r.size * 0.65);
+    if (G.endingPending && !moonHit && !rabbitHit) return;
     ensureAudio();
 
+    const panel = requestPanelBounds();
+    if (!G.endingPending && px >= panel.x && px <= panel.x + panel.width && py >= panel.y && py <= panel.y + panel.height) {
+      if (!G.requestReadyAt && !G.flyingCarrots.length) {
+        G.hintUntil = G.clock + 2800;
+        speakRequest();
+      }
+      return;
+    }
+
     // Check carrot hits FIRST (fixes clicks near moon)
-    for (let i = G.carrots.length - 1; i >= 0; i--) {
+    for (let i = G.carrots.length - 1; !G.endingPending && i >= 0; i--) {
       const c = G.carrots[i];
       if (c.scale < 0.35) continue;
       const dist = Math.hypot(px - c.x, py - c.y);
       if (dist < veggieHitRadius(c.size) && G.score + G.flyingCarrots.length < CARROT_GOAL) {
         if (c.type !== currentRequest().type) {
           setFeedback(VEGETABLE_NAMES[currentRequest().type] + ' 찾기!');
-          G.hintUntil = G.clock + 1600;
+          G.hintUntil = G.clock + 2800;
+          speakRequest();
           return;
         }
+        cancelGuidance();
+        G.hintUntil = 0;
         playPop();
         spawnParticles(c.x, c.y, 3, 'star');
         G.flyingCarrots.push({ sx: c.x, sy: c.y, size: c.size, t: 0, type: c.type });
@@ -2794,20 +2996,19 @@
     }
 
     // Tap the moon (moon rabbit) → dim the screen
-    if (Math.hypot(px - G.moonX, py - G.moonY) < G.moonR * 1.3) {
+    if (moonHit) {
       G.dimming = G.reducedMotion ? 0 : 0.3;
-      setFeedback('달이 반가워요');
+      talkRabbit();
       playSparkle();
       spawnParticles(G.moonX, G.moonY, 3, 'star');
       return;
     }
 
     // Tap characters
-    const r = G.rabbit;
-    if (Math.hypot(px - r.x, py - r.y) < Math.max(28, r.size * 0.65)) {
+    if (rabbitHit) {
       r.bounce = 1;
       r.happy = 2;
-      setFeedback('토끼 · 반가워!');
+      talkRabbit();
       playSparkle();
       spawnParticles(r.x, r.y - r.size * 0.3, 5, 'heart');
       return;
@@ -2889,6 +3090,7 @@
         G.hintUntil = 0;
         setFeedback('이번엔 ' + VEGETABLE_NAMES[currentRequest().type] + '!');
         spawnChoices();
+        speakRequest();
       }
       updateParticles(dt);
       return;
@@ -2963,6 +3165,10 @@
     drawCharacters(t);
     drawFlyingCarrots();
     drawParticles();
+    if (G.hintUntil > G.clock) {
+      const target = G.carrots.find(c => c.type === currentRequest().type && c.scale >= 0.35);
+      if (target) drawTapGuide(target);
+    }
     drawScore();
   }
 
