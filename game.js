@@ -113,6 +113,8 @@
   let pendingRequestGuidance = null;
   let lastGuidanceText = '';
   let lastGuidanceAt = -Infinity;
+  let friendRecording = null;
+  const friendRecordingCache = new Map();
   try {
     if (window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function') {
       guidanceSynth = window.speechSynthesis;
@@ -141,7 +143,9 @@
         return;
       }
     }
-    if (!G.paused && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    if (!G.paused && (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted')) {
+      audioCtx.resume().catch(() => {});
+    }
   }
 
   function tone(freq, dur, type, vol, ramp) {
@@ -380,6 +384,24 @@
   }
   let playName = '';
   try { playName = normalizePlayName(window.localStorage.getItem(PLAY_NAME_KEY)); } catch (_) {}
+  // This is a lookup key, not a privacy boundary: preset audio is publicly served.
+  const PRESET_NAME_SHA256 = '09ed99fd81de8975ed91ab388632162b3762acdc7a83b0493f84e89fe67b551f';
+  let presetNameMatches = false;
+  let nameLookupGeneration = 0;
+  function refreshPresetNameMatch() {
+    const generation = ++nameLookupGeneration;
+    const currentName = playName;
+    presetNameMatches = false;
+    if (!currentName || !window.crypto || !window.crypto.subtle || !window.TextEncoder) return;
+    try {
+      window.crypto.subtle.digest('SHA-256', new window.TextEncoder().encode(currentName)).then(buffer => {
+        if (generation !== nameLookupGeneration || currentName !== playName) return;
+        const hash = Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, '0')).join('');
+        presetNameMatches = hash === PRESET_NAME_SHA256;
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  refreshPresetNameMatch();
   function hasPlayName() { return !!playName; }
   function getCallName() {
     if (!playName) return '친구야';
@@ -414,6 +436,7 @@
     }
     cancelGuidance();
     playName = nextName;
+    refreshPresetNameMatch();
     playNameInput.value = playName;
     let saved = true;
     try {
@@ -482,93 +505,275 @@
       { text: '천천히 같이 걸을까?', address: true },
       { text: '내 등딱지를 봐.' },
       { text: '나는 거북이야.' },
+      { text: '안녕, 또 만나서 좋아.', address: true },
+      { text: '느릿느릿, 서두르지 않아도 돼.' },
+      { text: '고개를 쏙, 인사해 볼까?' },
+      { text: '내 등딱지는 작은 지붕 같지?' },
+      { text: '나랑 느리게 손을 흔들어 볼까?', address: true },
+      { text: '토끼랑 나란히 놀면 즐거워.' },
+      { text: '동그란 달이 내 등딱지 같아.' },
+      { text: '같이 놀아 줘서 고마워.', address: true },
     ],
     penguin: [
       { text: '사랑해', address: true },
       { text: '뒤뚱뒤뚱 같이 걸을까?', address: true },
       { text: '내 몸은 파란색이야.' },
       { text: '내 날개가 움직여.' },
+      { text: '안녕, 날개로 인사할게.', address: true },
+      { text: '뒤뚱뒤뚱, 내 걸음이 재미있지?' },
+      { text: '나랑 팔을 살짝 펴 볼까?', address: true },
+      { text: '내 고글이 반짝반짝해.' },
+      { text: '찬물에서도 헤엄을 잘 쳐.' },
+      { text: '첨벙첨벙, 헤엄치는 흉내 내 볼까?' },
+      { text: '구름 위에서 미끄럼 타면 어떨까?' },
+      { text: '네가 오니까 신이 나.', address: true },
     ],
     fox: [
       { text: '사랑해', address: true },
       { text: '같이 꼬리를 흔들까?', address: true },
       { text: '내 귀는 뾰족해.' },
       { text: '내 꼬리 끝은 하얘.' },
+      { text: '살랑살랑, 반가워.', address: true },
+      { text: '내 꼬리는 폭신한 붓 같아.' },
+      { text: '귀를 쫑긋, 무슨 소리가 날까?' },
+      { text: '나랑 고개를 살짝 갸웃할까?', address: true },
+      { text: '까꿍, 여우 친구가 여기 있어.' },
+      { text: '달에 꼬리 그림을 그려 볼까?' },
+      { text: '친구들 꼬리가 모두 다르네.' },
+      { text: '같이 있으니까 기분이 좋아.', address: true },
     ],
     brownBear: [
       { text: '사랑해', address: true },
       { text: '나랑 손을 흔들까?', address: true },
       { text: '내 털은 갈색이야.' },
       { text: '내 귀는 동그래.' },
+      { text: '안녕, 큰 앞발로 인사할게.', address: true },
+      { text: '토닥토닥, 다정하게 인사해 볼까?' },
+      { text: '나랑 두 팔을 벌려 볼까?', address: true },
+      { text: '내 앞발은 넓적해.' },
+      { text: '곰처럼 천천히 흔들흔들.' },
+      { text: '구름은 커다란 베개 같아.' },
+      { text: '토끼 친구 귀는 길쭉하네.' },
+      { text: '오늘도 만나서 참 좋아.', address: true },
     ],
     lion: [
       { text: '사랑해', address: true },
       { text: '반가워, 나는 사자야.', address: true },
       { text: '내 얼굴에 갈기가 있어.' },
       { text: '내 갈기가 살랑살랑.' },
+      { text: '어흥, 조그맣게 인사할게.' },
+      { text: '나랑 방긋 웃어 볼까?', address: true },
+      { text: '갈기가 꽃잎처럼 둥글지?' },
+      { text: '고개를 흔들면 갈기도 흔들려.' },
+      { text: '친구들하고 노는 게 좋아.' },
+      { text: '달나라에서도 다 같이 놀자.', address: true },
+      { text: '두 손으로 꽃받침 해 볼까?' },
+      { text: '네 인사가 참 반가워.', address: true },
     ],
     leopardCat: [
       { text: '사랑해', address: true },
       { text: '나는 삵이야, 반가워.', address: true },
       { text: '내 몸에 점무늬가 있어.' },
       { text: '내 꼬리에 줄무늬가 있어.' },
+      { text: '살금살금, 인사하러 왔어.', address: true },
+      { text: '내 수염이 양옆으로 쭉 뻗었네.' },
+      { text: '내 귀도 쫑긋 세워져 있어.' },
+      { text: '나랑 눈을 깜빡해 볼까?', address: true },
+      { text: '점박이 옷을 입은 것 같지?' },
+      { text: '호랑이 친구는 줄무늬가 멋져.' },
+      { text: '별빛도 내 무늬처럼 콕콕.' },
+      { text: '작은 목소리로 안녕.', address: true },
     ],
     squid: [
       { text: '사랑해', address: true },
       { text: '나랑 살랑살랑 춤출까?', address: true },
       { text: '나는 분홍 오징어야.' },
       { text: '내 다리가 움직여.' },
+      { text: '살랑살랑, 만나서 반가워.', address: true },
+      { text: '내 다리가 리본 같지?' },
+      { text: '손가락을 꼼지락해 볼까?', address: true },
+      { text: '물결처럼 부드럽게 흔들흔들.' },
+      { text: '내 지느러미가 팔랑팔랑해.' },
+      { text: '바닷속에서도 춤추고 싶어.' },
+      { text: '별들하고 춤추면 어떨까?' },
+      { text: '함께 노니까 더 신나.', address: true },
     ],
     duck: [
       { text: '사랑해', address: true },
       { text: '나랑 뒤뚱뒤뚱 걸을까?', address: true },
       { text: '나는 빨간 오리야.' },
       { text: '내 부리를 봐.' },
+      { text: '꽥꽥, 반가워.', address: true },
+      { text: '내 발은 물장구를 잘 쳐.' },
+      { text: '나랑 손으로 날개를 만들어 볼까?', address: true },
+      { text: '뒤뚱뒤뚱, 오리 인사야.' },
+      { text: '내 부리는 납작하고 넓어.' },
+      { text: '펭귄 친구도 뒤뚱뒤뚱 걷네.' },
+      { text: '달빛 연못에서 놀면 어떨까?' },
+      { text: '와 줘서 기뻐.', address: true },
     ],
     tiger: [
       { text: '사랑해', address: true },
       { text: '같이 폴짝 뛰어 볼까?', address: true },
       { text: '내 털에 줄무늬가 있어.' },
       { text: '내 꼬리가 길지?' },
+      { text: '어흥, 반가운 인사야.', address: true },
+      { text: '내 줄무늬는 멋진 옷 같아.' },
+      { text: '나랑 어깨를 살짝 들썩할까?', address: true },
+      { text: '꼬리에도 줄무늬가 있네.' },
+      { text: '사자 친구 갈기가 멋지다.' },
+      { text: '구름 위를 걸으면 폭신할까?' },
+      { text: '손바닥을 펴서 인사해 볼까?' },
+      { text: '같이 놀 생각에 두근두근해.', address: true },
     ],
     sunBear: [
       { text: '사랑해', address: true },
       { text: '방긋, 나랑 웃어 볼까?', address: true },
       { text: '내 가슴에 밝은 무늬가 있어.' },
       { text: '내 혀가 쏙 나왔네.' },
+      { text: '안녕, 말레이곰이야.', address: true },
+      { text: '내 혀는 길쭉길쭉해.' },
+      { text: '나랑 볼을 살짝 만져 볼까?', address: true },
+      { text: '내 둥근 귀가 보이니?' },
+      { text: '불곰 친구랑 털 색이 달라.' },
+      { text: '작은 구름을 안으면 어떨까?' },
+      { text: '헤헤, 웃는 얼굴이 좋아.' },
+      { text: '네가 웃으면 나도 좋아.', address: true },
     ],
     chick: [
       { text: '사랑해', address: true },
       { text: '나랑 고개를 까딱할까?', address: true },
       { text: '나는 노란 병아리야.' },
       { text: '내 부리는 작아.' },
+      { text: '삐약삐약, 안녕.', address: true },
+      { text: '나는 햇살 같은 노란색이야.' },
+      { text: '나랑 손가락으로 인사할까?', address: true },
+      { text: '작은 날개를 팔랑팔랑.' },
+      { text: '고개를 갸웃, 또 갸웃.' },
+      { text: '토끼 친구 옆에 있으니 든든해.' },
+      { text: '작은 별이 나랑 친구 하면 좋겠다.' },
+      { text: '만나서 기쁜 마음이 삐약삐약.', address: true },
     ],
     cat: [
       { text: '사랑해', address: true },
       { text: '야옹, 만나서 반가워.', address: true },
       { text: '나는 빨간 고양이야.' },
       { text: '내 귀가 쫑긋.' },
+      { text: '야옹, 또 와 줬구나.', address: true },
+      { text: '내 수염이 간질간질해.' },
+      { text: '나랑 눈을 천천히 깜빡할까?', address: true },
+      { text: '꼬리를 살랑, 반가운 인사야.' },
+      { text: '동그랗게 웅크리면 털 공 같지?' },
+      { text: '삵 친구는 점박이 옷을 입었네.' },
+      { text: '달빛 아래서 기지개를 켜 볼까?' },
+      { text: '함께 놀아서 마음이 포근해.', address: true },
     ],
   };
-  // Small, consistent differences keep each friend recognizable without sharp voices.
+  const FRIEND_CONTEXT_DIALOGUE = {
+    turtle: {
+      carrot: { text: '천천히 당근을 나눠 주고 있구나.', address: true },
+      cucumber: { text: '오이가 내 다리처럼 초록색이네.' },
+      moon: { text: '느린 나도 달에 같이 갈 수 있겠네.' },
+    },
+    penguin: {
+      carrot: { text: '당근을 나누니 토끼가 기뻐하네.' },
+      cucumber: { text: '길쭉한 오이가 헤엄치는 물고기 같아.' },
+      moon: { text: '달나라에서도 뒤뚱뒤뚱 걸어 볼까?', address: true },
+    },
+    fox: {
+      carrot: { text: '당근이 내 털이랑 비슷한 색이야.' },
+      cucumber: { text: '초록 오이를 친구에게 나눠 주는구나.', address: true },
+      moon: { text: '달나라에선 내 꼬리가 더 반짝일까?' },
+    },
+    brownBear: {
+      carrot: { text: '당근을 나눠 주는 모습이 다정해.', address: true },
+      cucumber: { text: '초록 오이가 싱그럽게 생겼네.' },
+      moon: { text: '달에 가면 큰 앞발로 인사해야지.' },
+    },
+    lion: {
+      carrot: { text: '주황 당근이 햇살처럼 환하네.' },
+      cucumber: { text: '오이를 나누니까 친구들이 좋아하네.' },
+      moon: { text: '이제 달나라에 갈 생각에 설레.', address: true },
+    },
+    leopardCat: {
+      carrot: { text: '당근 위의 초록 잎도 보이네.' },
+      cucumber: { text: '오이에도 길쭉한 줄무늬가 있네.' },
+      moon: { text: '달에서 내 점무늬도 반짝일까?', address: true },
+    },
+    squid: {
+      carrot: { text: '당근 잎이 내 다리처럼 살랑거릴까?' },
+      cucumber: { text: '초록 오이가 바다 풀을 닮았네.' },
+      moon: { text: '달나라에 가서 살랑살랑 춤추자.', address: true },
+    },
+    duck: {
+      carrot: { text: '당근을 나누다니, 꽥꽥 고마워.', address: true },
+      cucumber: { text: '오이가 길쭉한 작은 배 같아.' },
+      moon: { text: '달까지 가는 길도 함께라서 좋아.' },
+    },
+    tiger: {
+      carrot: { text: '당근도 나처럼 주황색이네.' },
+      cucumber: { text: '오이를 나눠 주고 있구나, 멋져.', address: true },
+      moon: { text: '달에 우리 줄무늬 그림자를 남겨 볼까?' },
+    },
+    sunBear: {
+      carrot: { text: '당근을 보니 토끼가 방긋 웃네.' },
+      cucumber: { text: '오이가 내 혀처럼 길쭉하네.' },
+      moon: { text: '곧 달에서 같이 웃을 수 있겠네.', address: true },
+    },
+    chick: {
+      carrot: { text: '당근이 내 작은 부리보다 크네.' },
+      cucumber: { text: '오이를 나눠 주니 삐약삐약 기뻐.', address: true },
+      moon: { text: '달나라에도 내 인사가 들릴까? 삐약.' },
+    },
+    cat: {
+      carrot: { text: '당근을 나눠 줬구나, 야옹.', address: true },
+      cucumber: { text: '초록 오이가 내 꼬리처럼 길쭉해.' },
+      moon: { text: '달에 가면 토끼 옆에 앉고 싶어.' },
+    },
+  };
+  // Keep the speaker's natural pitch; gentle pacing gives each friend a rhythm.
   const FRIEND_VOICE_PROFILES = {
-    turtle:     { slot: 0, rate: 0.92, pitch: 0.94 },
-    penguin:    { slot: 1, rate: 0.95, pitch: 1.02 },
-    fox:        { slot: 2, rate: 0.99, pitch: 1.08 },
-    brownBear:  { slot: 3, rate: 0.94, pitch: 0.90 },
-    lion:       { slot: 4, rate: 0.96, pitch: 0.92 },
-    leopardCat: { slot: 5, rate: 0.98, pitch: 1.04 },
-    squid:      { slot: 6, rate: 0.96, pitch: 1.10 },
-    duck:       { slot: 7, rate: 0.97, pitch: 1.06 },
-    tiger:      { slot: 8, rate: 0.97, pitch: 0.96 },
-    sunBear:    { slot: 9, rate: 0.95, pitch: 0.93 },
-    chick:      { slot: 10, rate: 1.02, pitch: 1.12 },
-    cat:        { slot: 11, rate: 0.98, pitch: 1.11 },
+    turtle:     { slot: 0, rate: 0.96, pitch: 1 },
+    penguin:    { slot: 1, rate: 0.98, pitch: 1 },
+    fox:        { slot: 2, rate: 1, pitch: 1 },
+    brownBear:  { slot: 3, rate: 0.97, pitch: 1 },
+    lion:       { slot: 4, rate: 0.98, pitch: 1 },
+    leopardCat: { slot: 5, rate: 1, pitch: 1 },
+    squid:      { slot: 6, rate: 0.99, pitch: 1 },
+    duck:       { slot: 7, rate: 1, pitch: 1 },
+    tiger:      { slot: 8, rate: 1, pitch: 1 },
+    sunBear:    { slot: 9, rate: 0.98, pitch: 1 },
+    chick:      { slot: 10, rate: 1.02, pitch: 1 },
+    cat:        { slot: 11, rate: 1.01, pitch: 1 },
   };
   const friendVoiceFamilies = { local: {}, general: {} };
   let friendTalkReadyAt = 0;
-  let friendLastLines = {};
+  let friendDialogueState = {};
   const COUNT_WORDS = ['하나씩 주세요', '하나', '둘', '셋'];
+  const GUIDANCE_AUDIO = {
+    'request-carrot-1': '당근 한 개 줄래?',
+    'request-carrot-2': '당근 두 개 줄래?',
+    'request-carrot-3': '당근 세 개 줄래?',
+    'request-cucumber-1': '오이 한 개 줄래?',
+    'request-cucumber-2': '오이 두 개 줄래?',
+    'request-cucumber-3': '오이 세 개 줄래?',
+    'find-carrot-1': '당근 한 개 찾아 줄래?',
+    'find-carrot-2': '당근 두 개 찾아 줄래?',
+    'find-carrot-3': '당근 세 개 찾아 줄래?',
+    'find-cucumber-1': '오이 한 개 찾아 줄래?',
+    'find-cucumber-2': '오이 두 개 찾아 줄래?',
+    'find-cucumber-3': '오이 세 개 찾아 줄래?',
+    'more-carrot-1': '당근 한 개 더 찾아 줄래?',
+    'more-carrot-2': '당근 두 개 더 찾아 줄래?',
+    'more-carrot-3': '당근 세 개 더 찾아 줄래?',
+    'more-cucumber-1': '오이 한 개 더 찾아 줄래?',
+    'more-cucumber-2': '오이 두 개 더 찾아 줄래?',
+    'more-cucumber-3': '오이 세 개 더 찾아 줄래?',
+    'count-1': '하나',
+    'count-2': '둘',
+    'count-3': '셋',
+    thanks: '고마워',
+  };
   const VEGETABLE_NAMES = { carrot: '당근', cucumber: '오이' };
   // Each request combines picture matching with a quantity from one to three.
   const REQUESTS = [
@@ -585,9 +790,11 @@
     return VEGETABLE_NAMES[request.type] + ' ' + request.count + '개 주세요';
   }
 
-  function canSpeakGuidance() {
-    return guidanceSynth && G.started && G.soundEnabled && !G.paused && !document.hidden && !G.ending;
+  function canPlayGuidance() {
+    return G.started && G.soundEnabled && !G.paused && !document.hidden && !G.ending;
   }
+
+  function canSpeakGuidance() { return guidanceSynth && canPlayGuidance(); }
 
   function koreanVoices(localOnly = false) {
     if (!guidanceSynth) return [];
@@ -597,11 +804,14 @@
     } catch (_) { return []; }
   }
 
-  function voiceScore(voice) {
+  function voiceQuality(voice) {
     // Web Speech has no quality field; use explicit provider labels when available.
     const label = (voice.name || '') + ' ' + (voice.voiceURI || '');
-    const quality = /\bpremium\b/i.test(label) ? 3 : /\b(enhanced|natural|neural)\b/i.test(label) ? 2 : 0;
-    return quality * 10 + (voice.localService === true ? 2 : 0) + (voice.default ? 1 : 0);
+    return /\bpremium\b/i.test(label) ? 3 : /\b(enhanced|natural|neural)\b/i.test(label) ? 2 : 0;
+  }
+
+  function voiceScore(voice) {
+    return voiceQuality(voice) * 10 + (voice.localService === true ? 2 : 0) + (voice.default ? 1 : 0);
   }
 
   function koreanVoice(localOnly = false) {
@@ -614,8 +824,11 @@
     const local = voices.filter(voice => voice.localService === true);
     // Keep a friend's named and unnamed lines in the same locally available voice.
     const candidates = local.length ? local : voices;
+    const bestQuality = candidates.reduce((best, voice) => Math.max(best, voiceQuality(voice)), 0);
     const families = new Map();
     candidates.forEach(voice => {
+      // Do not trade audible quality for a larger cast of nominal speakers.
+      if (voiceQuality(voice) < bestQuality) return;
       // Quality variants of one speaker are not separate character voices.
       const family = (voice.name || voice.voiceURI || voice.lang).toLowerCase()
         .replace(/\b(premium|enhanced|natural|neural|super-compact|compact|default)\b/g, '')
@@ -639,6 +852,18 @@
   function cancelGuidance() {
     const hadUtterance = !!guidanceUtterance;
     guidanceGeneration++;
+    if (friendRecording) {
+      const recording = friendRecording;
+      friendRecording = null;
+      window.clearTimeout(recording.timeout);
+      if (recording.controller) recording.controller.abort();
+      if (recording.source) {
+        recording.source.onended = null;
+        try { recording.source.stop(); } catch (_) {}
+        recording.source.disconnect();
+      }
+      if (recording.gain) recording.gain.disconnect();
+    }
     pendingRequestGuidance = null;
     guidanceUtterance = null;
     guidanceDucked = false;
@@ -652,9 +877,22 @@
     applyMasterGain();
   }
 
-  function speakGuidance(text, allowPendingRequest = false, localOnly = false, speaker = 'rabbit') {
+  function speakGuidance(text, allowPendingRequest = false, localOnly = false, speaker = 'rabbit', deviceOnly = false) {
     const now = performance.now();
-    if (canSpeakGuidance() && text === lastGuidanceText && now - lastGuidanceAt < 1000) return true;
+    if (canPlayGuidance() && text === lastGuidanceText && now - lastGuidanceAt < 1000) return true;
+    if (!deviceOnly && !localOnly && speaker === 'rabbit') {
+      const entry = Object.entries(GUIDANCE_AUDIO).find(([, line]) => line === text);
+      if (entry && playRecording('assets/guidance/' + entry[0] + '.m4a?v=20261114',
+          () => speakGuidance(text, allowPendingRequest, localOnly, speaker, true))) {
+        // A synchronous failure may already have fallen back (or failed again).
+        // Preserve that path's retry state instead of reinstating its cooldown.
+        if (friendRecording) {
+          lastGuidanceText = text;
+          lastGuidanceAt = now;
+        }
+        return true;
+      }
+    }
     cancelGuidance();
     if (!canSpeakGuidance()) return false;
     const profile = FRIEND_VOICE_PROFILES[speaker];
@@ -708,7 +946,7 @@
   }
 
   function speakRequest(allowPending = false) {
-    if (!canSpeakGuidance() || G.endingPending || G.requestReadyAt || G.flyingCarrots.length) return;
+    if (!canPlayGuidance() || G.endingPending || G.requestReadyAt || G.flyingCarrots.length) return;
     const request = currentRequest();
     const quantity = ['', '한', '두', '세'][request.count];
     const text = VEGETABLE_NAMES[request.type] + ' ' + quantity + ' 개 줄래?';
@@ -735,28 +973,177 @@
   }
 
   function hasActiveGuidance() {
-    if (guidanceUtterance) return true;
+    if (guidanceUtterance || friendRecording) return true;
     try { return !!(guidanceSynth && (guidanceSynth.speaking || guidanceSynth.pending)); }
     catch (_) { return false; }
+  }
+
+  function playFriendRecording(name, line, onFailure, personal = false) {
+    const index = FRIEND_DIALOGUE[name].indexOf(line);
+    const key = index >= 0 ? 'base-' + String(index + 1).padStart(2, '0') :
+      Object.keys(FRIEND_CONTEXT_DIALOGUE[name]).find(context => FRIEND_CONTEXT_DIALOGUE[name][context] === line);
+    if (!key) return false;
+    const preset = personal && presetNameMatches;
+    const nameVoice = personal && !preset && guidanceSynth && GuidanceUtterance ? friendVoice(name, true) : null;
+    // Only fixed public dialogue IDs enter the URL; personal names never do.
+    const url = 'assets/voices/' + name + '/' + key + (preset ? '-featured' : nameVoice ? '-body' : '') + '.m4a?v=20261114';
+    return playRecording(url, onFailure, nameVoice, name);
+  }
+
+  function playRecording(url, onFailure, nameVoice = null, speaker = 'rabbit') {
+    if (!canPlayGuidance() || !audioCtx || typeof audioCtx.createBufferSource !== 'function' ||
+        typeof audioCtx.decodeAudioData !== 'function' || typeof window.fetch !== 'function') return false;
+    cancelGuidance();
+    const context = audioCtx;
+    const generation = guidanceGeneration;
+    const recording = {
+      source: null, gain: null, timeout: null, buffer: null,
+      nameDone: !nameVoice, nameStarted: false,
+      controller: typeof window.AbortController === 'function' ? new window.AbortController() : null,
+    };
+    friendRecording = recording;
+    const isCurrent = () => friendRecording === recording && generation === guidanceGeneration &&
+      context === audioCtx && canPlayGuidance();
+    const fail = () => {
+      if (!isCurrent()) return;
+      cancelGuidance();
+      onFailure(recording.nameStarted);
+    };
+    const play = buffer => {
+      if (!isCurrent()) return;
+      recording.buffer = buffer;
+      if (!recording.nameDone) return;
+      // A source started in a suspended context is only queued and may never end.
+      // Keep the loading deadline until resume actually succeeds.
+      if (context.state !== 'running') {
+        if (context.state === 'closed') { fail(); return; }
+        try {
+          context.resume().then(() => {
+            if (isCurrent() && context.state === 'running') play(buffer);
+          }).catch(fail);
+        } catch (_) { fail(); }
+        return;
+      }
+      try {
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        recording.source = source;
+        recording.gain = gain;
+        source.buffer = buffer;
+        gain.gain.setValueAtTime(0.65, context.currentTime);
+        source.connect(gain);
+        // Speech stays at its own volume while music and effects are ducked.
+        gain.connect(context.destination);
+        source.onended = () => {
+          if (!isCurrent()) return;
+          friendRecording = null;
+          source.disconnect();
+          gain.disconnect();
+          guidanceDucked = false;
+          applyMasterGain();
+        };
+        source.start();
+        window.clearTimeout(recording.timeout);
+        guidanceDucked = true;
+        applyMasterGain();
+      } catch (_) { fail(); }
+    };
+    recording.timeout = window.setTimeout(fail, 5000);
+    if (nameVoice) {
+      // Only the short personal vocative uses local TTS; the body keeps its animal voice.
+      const nameFinished = () => {
+        if (!isCurrent() || recording.nameDone) return;
+        guidanceUtterance = null;
+        recording.nameDone = true;
+        if (recording.buffer) play(recording.buffer);
+      };
+      try {
+        const utterance = new GuidanceUtterance(getCallName() + ',');
+        utterance.voice = nameVoice;
+        utterance.lang = nameVoice.lang;
+        utterance.rate = FRIEND_VOICE_PROFILES[speaker].rate;
+        utterance.pitch = 1;
+        utterance.volume = 0.65;
+        utterance.onstart = () => {
+          if (!isCurrent()) return;
+          recording.nameStarted = true;
+          guidanceDucked = true;
+          applyMasterGain();
+        };
+        utterance.onend = nameFinished;
+        utterance.onerror = nameFinished;
+        guidanceUtterance = utterance;
+        guidanceSynth.speak(utterance);
+      } catch (_) { nameFinished(); }
+    }
+    if (friendRecordingCache.has(url)) {
+      const buffer = friendRecordingCache.get(url);
+      friendRecordingCache.delete(url);
+      friendRecordingCache.set(url, buffer);
+      play(buffer);
+      return true;
+    }
+    try {
+      window.fetch(url, recording.controller ? { signal: recording.controller.signal } : {})
+        .then(response => {
+          if (!response.ok) throw new Error('Voice unavailable');
+          return response.arrayBuffer();
+        })
+        .then(data => isCurrent() ? context.decodeAudioData(data) : null)
+        .then(buffer => {
+          if (!buffer || !isCurrent()) return;
+          friendRecordingCache.set(url, buffer);
+          if (friendRecordingCache.size > 24) friendRecordingCache.delete(friendRecordingCache.keys().next().value);
+          play(buffer);
+        }).catch(fail);
+    } catch (_) { fail(); }
+    return true;
+  }
+
+  function nextFriendLine(name) {
+    const lines = FRIEND_DIALOGUE[name];
+    const state = friendDialogueState[name] || (friendDialogueState[name] = {
+      remaining: [], lastBase: -1, contexts: new Set(), turns: 0,
+    });
+    if (!state.remaining.length) {
+      state.remaining = lines.map((_, index) => index);
+      for (let i = state.remaining.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [state.remaining[i], state.remaining[j]] = [state.remaining[j], state.remaining[i]];
+      }
+      // Even across two shuffled rounds, never repeat the last base line immediately.
+      if (state.remaining[0] === state.lastBase && state.remaining.length > 1) {
+        [state.remaining[0], state.remaining[1]] = [state.remaining[1], state.remaining[0]];
+      }
+      state.contexts.clear();
+    }
+    state.turns++;
+    const context = G.score >= 10 ? 'moon' : currentRequest().type;
+    if (state.turns % 4 === 0 && !state.contexts.has(context)) {
+      state.contexts.add(context);
+      return FRIEND_CONTEXT_DIALOGUE[name][context];
+    }
+    state.lastBase = state.remaining.shift();
+    return lines[state.lastBase];
   }
 
   function talkFriend(name) {
     const lines = FRIEND_DIALOGUE[name];
     if (!lines || !G.started || G.paused || document.hidden || G.ending || G.endingPending ||
         G.requestReadyAt || G.flyingCarrots.length || G.clock < friendTalkReadyAt || hasActiveGuidance()) return false;
-    const previous = friendLastLines[name];
-    let index = Math.floor(Math.random() * (lines.length - (previous === undefined ? 0 : 1)));
-    if (previous !== undefined && index >= previous) index++;
-    const line = lines[index];
+    const line = nextFriendLine(name);
     const text = (line.address ? getCallName() + ' ' : '') + line.text;
     const personal = !!line.address && hasPlayName();
-    friendLastLines[name] = index;
     friendTalkReadyAt = G.clock + 1000;
     setFeedback(FRIEND_LABELS[name] + ' · ' + text);
-    const spoken = speakGuidance(text, false, personal, name);
-    if (personal && !spoken && canSpeakGuidance()) {
-      speakGuidance('친구야 ' + line.text, false, false, name);
-    }
+    const useDeviceVoice = (nameAlreadySpoken = false) => {
+      const includeName = personal && !nameAlreadySpoken;
+      const spoken = speakGuidance(nameAlreadySpoken ? line.text : text, false, includeName, name);
+      if (includeName && !spoken && canSpeakGuidance()) {
+        speakGuidance('친구야 ' + line.text, false, false, name);
+      }
+    };
+    if (!playFriendRecording(name, line, useDeviceVoice, personal)) useDeviceVoice();
     return true;
   }
 
@@ -3147,7 +3534,7 @@
   function resetGame() {
     cancelGuidance();
     friendTalkReadyAt = 0;
-    friendLastLines = {};
+    friendDialogueState = {};
     G.score = 0;
     G.clock = 0;
     G.requestIndex = 0;

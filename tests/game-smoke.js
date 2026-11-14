@@ -63,9 +63,30 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
       exponentialRampToValueAtTime: numeric, linearRampToValueAtTime: numeric };
   }
   class AudioContext {
-    constructor() { this.state = 'running'; this.destination = {}; this.resumes = 0; contexts.push(this); }
+    constructor() {
+      this.state = 'running'; this.destination = {}; this.resumes = 0; contexts.push(this);
+      if (options.recordings) {
+        this.decodeAudioData = (data, success, failure) => {
+          const decoding = options.recordings.decode(data);
+          if (success || failure) decoding.then(success, failure);
+          return decoding;
+        };
+        this.createBufferSource = () => options.recordings.createSource();
+      }
+    }
     get currentTime() { return now / 1000; }
-    resume() { this.resumes++; this.state = 'running'; return Promise.resolve(); }
+    resume() {
+      this.resumes++;
+      const recordings = options.recordings;
+      if (recordings && (recordings.holdResume || recordings.failResume || recordings.resumeWithoutRunning)) {
+        const pending = deferred();
+        recordings.resumptions.push({ context: this, ...pending });
+        if (recordings.failResume) pending.reject(Error('Audio resume denied'));
+        else if (recordings.resumeWithoutRunning) pending.resolve();
+        return pending.promise;
+      }
+      this.state = 'running'; return Promise.resolve();
+    }
     suspend() { if (!options.pendingSuspend) this.state = 'suspended'; return Promise.resolve(); }
     close() { this.state = 'closed'; return Promise.resolve(); }
     createOscillator() { return { frequency: audioParam(), connect() {}, start: numeric, stop: numeric }; }
@@ -87,7 +108,26 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   if (options.speech) {
     window.speechSynthesis = options.speech;
     window.SpeechSynthesisUtterance = class {
-      constructor(text) { this.text = text; }
+      constructor(text) {
+        if (options.speech.failConstruct) throw Error('Speech construction unavailable');
+        this.text = text;
+      }
+    };
+  }
+  if (options.recordings) {
+    const recordings = options.recordings;
+    window.fetch = globalThis.fetch = recordings.fetch.bind(recordings);
+    window.AbortController = globalThis.AbortController = class {
+      constructor() { this.signal = { aborted: false }; }
+      abort() { this.signal.aborted = true; }
+    };
+    window.setTimeout = globalThis.setTimeout = (fn, delay) => recordings.setTimer(fn, delay);
+    window.clearTimeout = globalThis.clearTimeout = id => recordings.timers.delete(id);
+  }
+  if (options.crypto) {
+    window.crypto = options.crypto.noSubtle ? {} : { subtle: { digest: options.crypto.digest.bind(options.crypto) } };
+    if (!options.crypto.noEncoder) window.TextEncoder = class {
+      encode(value) { options.crypto.encoded.push(value); return new Uint8Array([1, 2, 3]); }
     };
   }
   if (withAudio) window.AudioContext = AudioContext;
@@ -98,7 +138,7 @@ function createGame(width, height, seed = 20261013, withAudio = true, options = 
   const marker = '  requestAnimationFrame(loop);\n})();';
   assert(source.includes(marker), 'Test cannot inspect the game IIFE');
   // Expose state only in this temporary evaluation, never in the shipped game.
-  new Function(source.replace(marker, '  globalThis.__smokeState = G; globalThis.__smokeApi = {scheduleBGM, updateParticles, spawnParticles, draw, drawFlyingCarrots, flightPos, currentRequest, requestLabel};\n' + marker))();
+  new Function(source.replace(marker, '  globalThis.__smokeState = G; globalThis.__smokeApi = {scheduleBGM, updateParticles, spawnParticles, draw, drawFlyingCarrots, flightPos, currentRequest, requestLabel, FRIEND_DIALOGUE, FRIEND_CONTEXT_DIALOGUE, PRESET_NAME_SHA256};\n' + marker))();
   const G = globalThis.__smokeState;
   function step(ms = 50) {
     now += ms;
@@ -455,9 +495,9 @@ const premiumLocalKorean = { ...localKorean, name: 'Korean Premium' };
 const premiumDefaultLocalKorean = { ...premiumLocalKorean, default: true };
 const premiumEnglish = { ...localEnglish, name: 'English Premium' };
 const friendVoiceSettings = {
-  turtle: [0.92, 0.94], penguin: [0.95, 1.02], fox: [0.99, 1.08], brownBear: [0.94, 0.90],
-  lion: [0.96, 0.92], leopardCat: [0.98, 1.04], squid: [0.96, 1.10], duck: [0.97, 1.06],
-  tiger: [0.97, 0.96], sunBear: [0.95, 0.93], chick: [1.02, 1.12], cat: [0.98, 1.11],
+  turtle: [0.96, 1], penguin: [0.98, 1], fox: [1, 1], brownBear: [0.97, 1],
+  lion: [0.98, 1], leopardCat: [1, 1], squid: [0.99, 1], duck: [1, 1],
+  tiger: [1, 1], sunBear: [0.98, 1], chick: [1.02, 1], cat: [1.01, 1],
 };
 
 function assertFriendVoice(utterance, name) {
@@ -492,7 +532,7 @@ function nextFriendSpeech(game, speech, name) {
 }
 
 function tapFriendGreeting(game, speech, name, greeting) {
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 16; attempt++) {
     const ch = showFriend(game, name);
     game.tap(ch.x, ch.y);
     if (game.G.feedback.includes(greeting + ' ')) return speech.spoken[speech.spoken.length - 1];
@@ -798,14 +838,24 @@ for (const mode of ['muted', 'unavailable']) {
   assert(JSON.stringify([G.feedback, G.hintUntil, G.rabbit.bounce, G.dimming, G.particles]) === endingState && speech.spoken.length === endingSpeech && G.score === 14, 'Ending dialogue changed the flying scene');
 }
 
-// Every animal answers actual taps with varied dialogue without changing the learning request.
+function genericLineText(line) {
+  return (line.address ? '친구야 ' : '') + line.text;
+}
+
+// Every animal exhausts a varied deck before repeating; rapid taps consume no lines.
 for (const [index, name] of friends.entries()) {
   const speech = speechMock([localKorean]);
   const game = createGame(390, 844, 30 + index, true, { speech });
   game.start(); finishSpeech(speech);
+  const base = game.api.FRIEND_DIALOGUE[name];
+  const contexts = game.api.FRIEND_CONTEXT_DIALOGUE[name];
+  assert(base.length === 12 && Object.keys(contexts).length === 3, 'Animal did not receive its full dialogue set: ' + name);
+  const expected = new Set([...base, contexts.carrot].map(genericLineText));
+  assert(expected.size === 13 && new Set([...base, ...Object.values(contexts)].map(genericLineText)).size === 15, 'Animal dialogue contains duplicate lines: ' + name);
   const seen = new Set();
   let previous = '';
-  for (let turn = 0; turn < 8; turn++) {
+  for (let turn = 0; turn < 26; turn++) {
+    if (turn % 13 === 0) seen.clear();
     game.advance(1100);
     const ch = showFriend(game, name);
     const before = JSON.stringify([game.G.score, game.G.requestIndex, game.G.requestItems,
@@ -818,6 +868,8 @@ for (const [index, name] of friends.entries()) {
     assert(utterance.voice === localKorean, 'Single available Korean voice was not retained: ' + name);
     const reply = utterance.text;
     assert(reply && reply !== previous, 'Animal repeated its previous line: ' + name);
+    assert(expected.has(reply) && !seen.has(reply), 'Animal repeated a line before exhausting its dialogue deck: ' + name);
+    if (turn === 3) assert(reply === genericLineText(contexts.carrot), 'Fourth animal reply did not acknowledge the current vegetable: ' + name);
     assert(game.G.feedback.includes(reply) && game.elements['learning-status'].textContent.includes(game.api.requestLabel()), 'Animal dialogue hid its reply or the current request: ' + name);
     assert(JSON.stringify([game.G.score, game.G.requestIndex, game.G.requestItems,
       game.G.requestReadyAt, game.G.hintUntil, game.api.requestLabel()]) === before, 'Animal dialogue changed learning progress: ' + name);
@@ -825,31 +877,56 @@ for (const [index, name] of friends.entries()) {
     finishSpeech(speech);
     for (let tap = 0; tap < 3; tap++) game.tap(ch.x, ch.y);
     assert(speech.spoken.length === spokenBefore + 1 && game.G.feedback.includes(reply), 'Rapid animal taps cycled or restarted dialogue: ' + name);
+    if (turn % 13 === 12) assert(seen.size === 13, 'Animal failed to visit every base line and one context line: ' + name);
   }
-  assert(seen.size >= 3, 'Animal did not offer enough dialogue variety: ' + name);
   assert(Array.from(seen).some(reply => reply.startsWith('친구야 ')) && Array.from(seen).some(reply => !reply.startsWith('친구야 ')), 'Animal did not mix greetings with observation dialogue: ' + name);
 }
 
-// Distinct local speakers are shared across animals, while quality variants remain one speaker.
+// Context reflects the live request, remains unique within a deck, and resets with a new game.
+for (const [index, name] of friends.entries()) {
+  const speech = speechMock([localKorean]);
+  const game = createGame(390, 844, 130 + index, true, { speech });
+  game.start();
+  const contexts = game.api.FRIEND_CONTEXT_DIALOGUE[name];
+  const contextTexts = new Set(Object.values(contexts).map(genericLineText));
+  const seen = new Set();
+  for (const [context, requestIndex, score] of [['carrot', 0, 0], ['cucumber', 1, 1], ['moon', 4, 10]]) {
+    for (let turn = 0; turn < 4; turn++) {
+      // Change the request immediately before the context turn, not when the deck was created.
+      if (turn === 3) { game.G.requestIndex = requestIndex; game.G.score = score; }
+      const reply = nextFriendSpeech(game, speech, name).text;
+      assert(!seen.has(reply), 'Changing requests repeated an already used animal line: ' + name);
+      seen.add(reply);
+      assert(turn === 3 ? reply === genericLineText(contexts[context]) : !contextTexts.has(reply), 'Animal used stale context or interrupted its base lines: ' + name + '/' + context);
+    }
+  }
+  finishSpeech(speech); game.click('home-button'); game.start();
+  const restartReplies = [];
+  for (let turn = 0; turn < 4; turn++) restartReplies.push(nextFriendSpeech(game, speech, name).text);
+  assert(restartReplies[3] === genericLineText(contexts.carrot) && new Set(restartReplies).size === 4, 'New game retained used context or repeated its initial deck: ' + name);
+}
+
+// Only the best available quality tier is shared across animals; variants remain one speaker.
 {
   const voiceA = { name: 'Voice A', voiceURI: 'mock.a', lang: 'ko-KR', localService: true };
   const voiceACompact = { ...voiceA, name: 'Voice A (Compact)', voiceURI: 'mock.a.compact' };
   const voiceAEnhanced = { ...voiceA, name: 'Voice A (Enhanced)', voiceURI: 'mock.a.enhanced' };
   const voiceAPremium = { ...voiceA, name: 'Voice A (Premium)', voiceURI: 'mock.a.premium' };
-  const voiceB = { ...voiceA, name: 'Voice B', voiceURI: 'mock.b' };
-  const voiceC = { ...voiceA, name: 'Voice C', voiceURI: 'mock.c' };
-  const voices = [voiceC, voiceACompact, premiumKorean, voiceB, voiceAPremium, premiumEnglish, voiceA, voiceAEnhanced];
+  const voiceB = { ...voiceA, name: 'Voice B (Premium)', voiceURI: 'mock.b.premium' };
+  const voiceC = { ...voiceA, name: 'Voice C (Premium)', voiceURI: 'mock.c.premium' };
+  const voiceBasic = { ...voiceA, name: 'Voice D', voiceURI: 'mock.d' };
+  const voices = [voiceC, voiceACompact, premiumKorean, voiceB, voiceAPremium, premiumEnglish, voiceA, voiceAEnhanced, voiceBasic];
   const speech = speechMock(voices);
   const game = createGame(390, 844, 80, true, { speech, storage: { 'moon-rabbit-play-name': '별이' } });
   game.start();
-  assert(speech.spoken[0].voice === voiceAPremium && speech.spoken[0].rate === 0.96 && speech.spoken[0].pitch === 1, 'Initial request no longer used the best Korean voice and normal guidance settings');
+  assert(speech.spoken[0].voice === voiceC && speech.spoken[0].rate === 0.96 && speech.spoken[0].pitch === 1, 'Initial request no longer used the best Korean voice and normal guidance settings');
   const assigned = {};
   for (const [index, name] of friends.entries()) {
     const expected = [voiceAPremium, voiceB, voiceC][index % 3];
     const kinds = new Set();
-    for (let turn = 0; turn < 8; turn++) {
+    for (let turn = 0; turn < 13; turn++) {
       const utterance = nextFriendSpeech(game, speech, name);
-      assert(utterance.voice === expected, 'Animal assignment duplicated quality variants, used a remote voice or changed between lines: ' + name);
+      assert(utterance.voice === expected, 'Animal assignment duplicated quality variants, downgraded quality or changed between lines: ' + name);
       kinds.add(utterance.text.startsWith('별이야 ') ? 'named' : 'observation');
     }
     assert(kinds.size === 2, 'Voice consistency did not exercise named and observation lines: ' + name);
@@ -865,13 +942,16 @@ for (const [index, name] of friends.entries()) {
       assert(utterance.voice.voiceURI === assigned[name] && refreshed.includes(utterance.voice), 'Voice refresh changed an existing speaker or reused a stale voice object: ' + name);
     }
   }
-  speech.change([voiceZero, voiceA, voiceAEnhanced, voiceB, voiceC, premiumKorean]);
+  const replacementAPremium = { ...voiceAPremium, name: 'Voice A [Premium]', voiceURI: 'mock.a.premium.updated' };
+  speech.change([voiceZero, voiceA, replacementAPremium, voiceB, voiceC, premiumKorean]);
   for (const [index, name] of friends.entries()) {
-    const expected = [voiceAEnhanced, voiceB, voiceC][index % 3];
+    const expected = [replacementAPremium, voiceB, voiceC][index % 3];
     assert(nextFriendSpeech(game, speech, name).voice === expected, 'Removing a quality variant changed the remembered speaker family: ' + name);
   }
+  // An old family with only an Enhanced variant must give way to an available Premium family.
   speech.change([voiceZero, voiceAEnhanced, voiceC, premiumKorean]);
-  assert(nextFriendSpeech(game, speech, 'penguin').voice === voiceAEnhanced, 'A removed speaker family was not reassigned to an available voice');
+  assert(nextFriendSpeech(game, speech, 'turtle').voice === voiceZero, 'Remembered family kept a lower quality variant despite a Premium alternative');
+  assert(nextFriendSpeech(game, speech, 'penguin').voice === voiceC, 'A removed speaker family was not reassigned within the highest quality tier');
   assert(nextFriendSpeech(game, speech, 'fox').voice === voiceC, 'Removing another speaker changed an available assigned family');
   finishSpeech(speech); game.advance(1100); game.tap(30, 30);
   let guidance = speech.spoken[speech.spoken.length - 1];
@@ -883,6 +963,25 @@ for (const [index, name] of friends.entries()) {
   game.tap(100, 300); game.advance(400);
   guidance = speech.spoken[speech.spoken.length - 1];
   assert(guidance.text === '하나' && guidance.voice === voiceZero && guidance.rate === 0.96 && guidance.pitch === 1 && guidance.volume === 0.65, 'Counting inherited an animal voice or profile');
+}
+
+// Newly available enhanced/neural/premium voices upgrade basic assignments immediately.
+{
+  const basicA = { name: 'Basic A', voiceURI: 'mock.basic.a', lang: 'ko-KR', localService: true };
+  const basicB = { ...basicA, name: 'Basic B', voiceURI: 'mock.basic.b' };
+  const enhanced = { ...basicA, name: 'New Enhanced', voiceURI: 'mock.new.enhanced' };
+  const neural = { ...basicA, name: 'New Speaker', voiceURI: 'mock.new.neural' };
+  const premium = { ...basicA, name: 'New Premium', voiceURI: 'mock.new.premium' };
+  const speech = speechMock([basicA, basicB]);
+  const game = createGame(390, 844, 82, true, { speech });
+  game.start();
+  assert(nextFriendSpeech(game, speech, 'turtle').voice === basicA && nextFriendSpeech(game, speech, 'penguin').voice === basicB, 'Basic voices did not remain usable without quality-labelled voices');
+  speech.change([basicA, enhanced, basicB]);
+  for (const name of friends) assert(nextFriendSpeech(game, speech, name).voice === enhanced, 'Enhanced voice did not replace a basic assignment: ' + name);
+  speech.change([basicA, basicB, neural]);
+  for (const name of friends) assert(nextFriendSpeech(game, speech, name).voice === neural, 'Neural URI did not outrank a basic voice: ' + name);
+  speech.change([basicA, enhanced, premium, basicB, neural]);
+  for (const name of friends) assert(nextFriendSpeech(game, speech, name).voice === premium, 'Premium voice did not replace an earlier lower-tier family: ' + name);
 }
 
 // Temporary loss of local voices must not mix personal speech with remote assignments.
@@ -1170,4 +1269,544 @@ for (const draft of ['123💫<>_', '']) {
   game.media.change({ matches: false });
   assert(!game.G.reducedMotion, 'Motion preference change was ignored');
 }
-log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 12-animal dialogue and voice profiles, stable speaker families and counting protection, nickname storage, draft/save feedback, start autosave and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
+log('PASS syntax, 28 ending scenarios, requested-item matching, quantities 1-3, quiet hints, request transitions, rotation recovery, pause, home, replay, audio lifecycle/storage, Korean speech selection and gesture unlock, remaining-quantity rabbit dialogue, 180 animal lines, non-repeating dialogue decks, live contexts and replay reset, natural-pitch profiles, highest-quality speaker families and upgrades, counting protection, nickname storage, draft/save feedback, start autosave and local-only speech, picture-card guidance, HiDPI, motion and particle regressions');
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function nameHashMock(options = {}) {
+  return {
+    ...options, calls: [], encoded: [],
+    digest(algorithm, data) {
+      const pending = deferred();
+      this.calls.push({ algorithm, data, ...pending });
+      if (this.throwDigest) throw Error('Digest unavailable');
+      if (this.rejectDigest) pending.reject(Error('Digest rejected'));
+      return pending.promise;
+    },
+  };
+}
+
+function presetDigestResult(game) {
+  // Match a synthetic test name to the public lookup key; never put the actual preset name here.
+  return new Uint8Array(game.api.PRESET_NAME_SHA256.match(/../g).map(byte => parseInt(byte, 16))).buffer;
+}
+
+function recordingMock(options = {}) {
+  return {
+    ...options, requests: [], decodes: [], sources: [], resumptions: [], timers: new Map(), timerID: 0,
+    response(url = '') {
+      const data = new ArrayBuffer(8); data.mockURL = url;
+      return { ok: this.httpOK !== false, arrayBuffer: () => Promise.resolve(data) };
+    },
+    fetch(url, options) {
+      // Existing animal cases isolate that channel; main-guidance cases opt in below.
+      if (url.startsWith('assets/guidance/') && !this.includeGuidance) throw Error('Guidance recordings omitted by this fixture');
+      const pending = deferred();
+      this.requests.push({ url, options, ...pending });
+      if (this.throwFetch) throw Error('Fetch unavailable');
+      if (!this.holdFetch) {
+        if (this.failFetch) pending.reject(Error('Network unavailable'));
+        else pending.resolve(this.response(url));
+      }
+      return pending.promise;
+    },
+    decode(data) {
+      const pending = deferred();
+      this.decodes.push({ data, ...pending });
+      if (!this.holdDecode) {
+        if (this.failDecode) pending.reject(Error('Unsupported audio'));
+        else pending.resolve({ duration: 2, sampleRate: 44100, mockURL: data.mockURL });
+      }
+      return pending.promise;
+    },
+    createSource() {
+      const source = {
+        started: false, stopped: false, disconnected: false,
+        connect(destination) { this.destination = destination; },
+        disconnect() { this.disconnected = true; },
+        start() { this.started = true; },
+        stop() { this.stopped = true; },
+      };
+      this.sources.push(source);
+      return source;
+    },
+    setTimer(fn, delay) { const id = ++this.timerID; this.timers.set(id, { fn, delay }); return id; },
+    fireTimeouts() {
+      const timers = Array.from(this.timers.values());
+      this.timers.clear();
+      timers.forEach(({ fn, delay }) => { assert(delay === 5000, 'Voice loading timeout changed'); fn(); });
+    },
+  };
+}
+
+async function flushRecordingWork() {
+  // Flush the fetch/body/decode/play promise chain without wall-clock sleeps.
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+}
+
+function tapRecordingFriend(game, speech, name = 'turtle') {
+  if (speech) finishSpeech(speech);
+  game.advance(1100);
+  const ch = showFriend(game, name);
+  game.tap(ch.x, ch.y);
+  return ch;
+}
+
+function finishRecording(recordings) {
+  const source = recordings.sources[recordings.sources.length - 1];
+  if (source && source.onended) source.onended();
+}
+
+async function checkRecordings() {
+  // Recorded dialogue works with and without Web Speech, with its own gain and no overlap.
+  for (const withSpeech of [true, false]) {
+    const speech = withSpeech ? speechMock([localKorean]) : null;
+    const recordings = recordingMock({ holdFetch: true });
+    const game = createGame(390, 844, 180, true, { speech, recordings });
+    game.start();
+    const ch = tapRecordingFriend(game, speech);
+    const spokenBefore = speech ? speech.spoken.length : 0;
+    assert(recordings.requests.length === 1 && recordings.sources.length === 0, 'Animal did not begin loading its fixed recording');
+    game.advance(1100); game.tap(ch.x, ch.y);
+    assert(recordings.requests.length === 1 && (!speech || speech.spoken.length === spokenBefore), 'Repeated tap overlapped pending recording loading');
+    recordings.requests[0].resolve(recordings.response());
+    await flushRecordingWork();
+    const source = recordings.sources[0];
+    assert(source && source.started && game.gains[0].gain.value === 0.25, 'Decoded recording failed to start or duck music');
+    assert(source.destination !== game.gains[0] && source.destination.gain.value === 0.65 && game.destinations[game.destinations.length - 1] === game.contexts[0].destination, 'Recording inherited the ducked music gain instead of its own output');
+    assert(recordings.timers.size === 0, 'Successful recording retained its loading timeout');
+    game.advance(1100); game.tap(ch.x, ch.y);
+    assert(recordings.requests.length === 1, 'Repeated tap overlapped a playing recording');
+    finishRecording(recordings);
+    assert(game.gains[0].gain.value === 1 && source.disconnected && source.destination.disconnected, 'Recording completion did not restore music or release nodes');
+    game.click('home-button');
+  }
+
+  // Loading/decoding failures fall back exactly once and leave later taps usable.
+  for (const scenario of [{ failFetch: true }, { throwFetch: true }, { httpOK: false }, { failDecode: true }, { holdFetch: true }]) {
+    const speech = speechMock([localKorean]);
+    const recordings = recordingMock(scenario);
+    const game = createGame(390, 844, 181, true, { speech, recordings });
+    game.start();
+    const before = speech.spoken.length;
+    tapRecordingFriend(game, speech);
+    if (scenario.holdFetch) recordings.fireTimeouts();
+    await flushRecordingWork();
+    assert(speech.spoken.length === before + 1 && recordings.sources.length === 0 && recordings.timers.size === 0, 'Recording failure did not fall back exactly once: ' + JSON.stringify(scenario));
+    assertFriendVoice(speech.spoken[speech.spoken.length - 1], 'turtle');
+    if (scenario.holdFetch) {
+      assert(recordings.requests[0].options.signal.aborted, 'Timed-out recording fetch was not aborted');
+      recordings.requests[0].resolve(recordings.response());
+      await flushRecordingWork();
+      assert(recordings.sources.length === 0 && speech.spoken.length === before + 1, 'Late timed-out fetch started sound or repeated fallback');
+    }
+    game.click('home-button');
+  }
+
+  // No Web Audio still leaves the original device-speech path available.
+  {
+    const speech = speechMock([localKorean]), recordings = recordingMock();
+    const game = createGame(390, 844, 182, false, { speech, recordings });
+    game.start(); tapRecordingFriend(game, speech);
+    assert(recordings.requests.length === 0 && speech.spoken.length === 2, 'Missing audio hardware attempted a recording or lost device speech');
+    game.click('home-button');
+  }
+
+  // Suspended contexts keep their deadline until resume really runs; late resolution stays cancelled.
+  for (const mode of ['resume', 'timeout', 'denied', 'still-suspended']) {
+    const speech = speechMock([localKorean]), recordings = recordingMock();
+    const game = createGame(390, 844, 187, true, { speech, recordings });
+    game.start();
+    game.contexts[0].state = 'suspended';
+    recordings.holdResume = mode === 'resume' || mode === 'timeout';
+    recordings.failResume = mode === 'denied';
+    recordings.resumeWithoutRunning = mode === 'still-suspended';
+    const spokenBefore = speech.spoken.length;
+    tapRecordingFriend(game, speech); await flushRecordingWork();
+    assert(recordings.sources.length === 0 && recordings.resumptions.length > 0, 'Suspended context queued an inaudible recording: ' + mode);
+    if (mode !== 'denied') assert(recordings.timers.size === 1, 'Pending resume lost its loading deadline: ' + mode);
+    if (mode === 'resume') {
+      recordings.resumptions.forEach(pending => { pending.context.state = 'running'; pending.resolve(); });
+      await flushRecordingWork();
+      assert(recordings.sources.length === 1 && recordings.sources[0].started && recordings.timers.size === 0 && speech.spoken.length === spokenBefore, 'Successful audio resume did not start the waiting recording');
+    } else {
+      if (mode !== 'denied') recordings.fireTimeouts();
+      await flushRecordingWork();
+      assert(recordings.sources.length === 0 && speech.spoken.length === spokenBefore + 1 && recordings.timers.size === 0, 'Unavailable audio resume did not fall back to speech: ' + mode);
+      recordings.resumptions.forEach(pending => { pending.context.state = 'running'; pending.resolve(); });
+      await flushRecordingWork();
+      assert(recordings.sources.length === 0 && speech.spoken.length === spokenBefore + 1, 'Late audio resume replayed a cancelled recording: ' + mode);
+    }
+    game.click('home-button');
+  }
+
+  // All existing stop actions cancel recordings; stale completion callbacks cannot restore audio.
+  for (const action of ['mute', 'pause', 'hide', 'pickup', 'home']) {
+    const speech = speechMock([localKorean]), recordings = recordingMock();
+    const game = createGame(390, 844, 183, true, { speech, recordings });
+    game.start(); tapRecordingFriend(game, speech); await flushRecordingWork();
+    const source = recordings.sources[0], oldEnd = source.onended;
+    if (action === 'mute') game.sound.click();
+    if (action === 'pause') game.click('pause-toggle');
+    if (action === 'hide') game.visibility(true);
+    if (action === 'home') game.click('home-button');
+    if (action === 'pickup') {
+      game.G.carrots = [{ x: 100, y: 300, size: 30, scale: 1, type: 'carrot', wobble: 0 }];
+      game.tap(100, 300);
+    }
+    assert(source.stopped && source.disconnected && source.destination.disconnected, 'Stop action left recording active: ' + action);
+    const gainsAfter = JSON.stringify(game.gains.map(gain => gain.gain.value));
+    oldEnd(); await flushRecordingWork();
+    assert(JSON.stringify(game.gains.map(gain => gain.gain.value)) === gainsAfter, 'Cancelled recording callback changed audio state: ' + action);
+    game.click('home-button');
+  }
+
+  // Cancellation while fetch or decode is pending never starts late sound or fallback speech.
+  for (const pendingStage of ['fetch', 'decode']) {
+    const speech = speechMock([localKorean]);
+    const recordings = recordingMock(pendingStage === 'fetch' ? { holdFetch: true } : { holdDecode: true });
+    const game = createGame(390, 844, 184, true, { speech, recordings });
+    game.start(); tapRecordingFriend(game, speech); await flushRecordingWork();
+    const before = speech.spoken.length;
+    game.sound.click();
+    assert(recordings.requests[0].options.signal.aborted && recordings.timers.size === 0, 'Cancellation did not release pending recording work');
+    if (pendingStage === 'fetch') recordings.requests[0].resolve(recordings.response());
+    else recordings.decodes[0].resolve({ duration: 2 });
+    await flushRecordingWork();
+    assert(recordings.sources.length === 0 && speech.spoken.length === before && game.gains[0].gain.value === 0, 'Cancelled ' + pendingStage + ' completion played or unmuted audio');
+    game.click('home-button');
+  }
+
+  // The decoded cache reuses a completed deck and evicts older entries after other animals speak.
+  {
+    const recordings = recordingMock();
+    const game = createGame(390, 844, 185, true, { recordings });
+    game.start(); Math.random = () => 0;
+    for (let turn = 0; turn < 14; turn++) {
+      tapRecordingFriend(game, null); await flushRecordingWork(); finishRecording(recordings);
+    }
+    assert(recordings.requests.length === 13 && recordings.decodes.length === 13 && recordings.sources.length === 14, 'Repeated deck did not reuse decoded recording buffers');
+    for (let turn = 0; turn < 13; turn++) {
+      tapRecordingFriend(game, null, 'penguin'); await flushRecordingWork(); finishRecording(recordings);
+    }
+    const before = recordings.requests.length;
+    tapRecordingFriend(game, null); await flushRecordingWork();
+    assert(recordings.requests.length === before + 1, 'Decoded cache retained an old buffer beyond its capacity');
+    assert(recordings.requests.every(({ url }) => /^assets\/voices\/(turtle|penguin)\/(base-(?:0[1-9]|1[0-2])|carrot)\.m4a\?v=20261114$/.test(url)), 'Recording request was not a fixed public dialogue URL');
+    game.click('home-button');
+  }
+
+  // Names use a local prefix, then the animal's recording; either completion order is safe.
+  for (const order of ['decode-first', 'name-first']) {
+    const speech = speechMock([localKorean]), recordings = recordingMock({ holdDecode: true });
+    const game = createGame(390, 844, 186, true, { speech, recordings, storage: { 'moon-rabbit-play-name': '별이' } });
+    game.start(); Math.random = () => 0;
+    tapRecordingFriend(game, speech, 'fox');
+    const prefix = speech.spoken[speech.spoken.length - 1];
+    assert(prefix.text === '별이야,' && prefix.voice === localKorean, 'Personal recording did not isolate the name in a local prefix');
+    assert(recordings.requests.length === 1 && recordings.requests[0].url === 'assets/voices/fox/base-02-body.m4a?v=20261114', 'Personal recording URL was not the fixed name-free body asset');
+    if (order === 'name-first') { prefix.onstart(); prefix.onend(); }
+    await flushRecordingWork();
+    recordings.decodes[0].resolve({ duration: 2 }); await flushRecordingWork();
+    if (order === 'decode-first') {
+      assert(recordings.sources.length === 0 && recordings.timers.size === 1, 'Decoded body started before the local name finished');
+      prefix.onstart();
+      assert(game.gains[0].gain.value === 0.25, 'Local name did not duck background audio');
+      prefix.onend();
+    }
+    await flushRecordingWork();
+    assert(recordings.sources.length === 1 && recordings.sources[0].started && recordings.timers.size === 0 && speech.spoken.length === 2, 'Name/body handoff failed or repeated the full sentence: ' + order);
+    const source = recordings.sources[0];
+    prefix.onend(); prefix.onerror(); await flushRecordingWork();
+    assert(recordings.sources.length === 1 && !source.stopped && game.gains[0].gain.value === 0.25, 'Duplicate name callbacks overlapped or cancelled the animal body');
+    finishRecording(recordings);
+    assert(game.gains[0].gain.value === 1, 'Name/body completion did not restore music');
+    game.click('home-button');
+  }
+
+  // Cancellation during a personal prefix stops speech and pending audio without late playback.
+  for (const stage of ['fetch', 'decode', 'name']) {
+    const speech = speechMock([localKorean]);
+    const recordings = recordingMock(stage === 'fetch' ? { holdFetch: true } : stage === 'decode' ? { holdDecode: true } : {});
+    const game = createGame(390, 844, 188, true, { speech, recordings, storage: { 'moon-rabbit-play-name': '별이' } });
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    const prefix = speech.spoken[speech.spoken.length - 1], cancellations = speech.cancellations;
+    prefix.onstart(); game.sound.click();
+    assert(speech.cancellations > cancellations && recordings.requests[0].options.signal.aborted && recordings.timers.size === 0, 'Cancelling a name left speech or loading active: ' + stage);
+    prefix.onend(); prefix.onerror();
+    if (stage === 'fetch') recordings.requests[0].resolve(recordings.response());
+    if (stage === 'decode') recordings.decodes[0].resolve({ duration: 2 });
+    await flushRecordingWork();
+    assert(recordings.sources.length === 0 && speech.spoken.length === 2 && game.gains[0].gain.value === 0, 'Late name or body completion replayed cancelled audio: ' + stage);
+    game.click('home-button');
+  }
+
+  // Prefix creation/playback errors skip only the local name and keep the animal body playable.
+  for (const failure of ['construct', 'speak', 'error-before-start', 'error-after-start']) {
+    const speech = speechMock([localKorean]), recordings = recordingMock();
+    const game = createGame(390, 844, 191, true, { speech, recordings, storage: { 'moon-rabbit-play-name': '별이' } });
+    game.start(); Math.random = () => 0;
+    speech.failConstruct = failure === 'construct';
+    speech.failSpeak = failure === 'speak';
+    tapRecordingFriend(game, speech, 'fox');
+    if (failure.startsWith('error-')) {
+      const prefix = speech.spoken[speech.spoken.length - 1];
+      if (failure === 'error-after-start') prefix.onstart();
+      prefix.onerror();
+    }
+    await flushRecordingWork();
+    assert(recordings.requests[0].url === 'assets/voices/fox/base-02-body.m4a?v=20261114' && recordings.sources.length === 1 && recordings.sources[0].started, 'Local prefix failure blocked the animal body: ' + failure);
+    assert(speech.spoken.length === (failure.startsWith('error-') ? 2 : 1) && recordings.timers.size === 0, 'Local prefix failure replayed the sentence or retained its deadline: ' + failure);
+    finishRecording(recordings);
+    assert(game.gains[0].gain.value === 1, 'Local prefix failure left audio ducked: ' + failure);
+    game.click('home-button');
+  }
+
+  // A name prefix cannot wait forever, and fallback must not repeat a name already started.
+  for (const nameStarted of [false, true]) {
+    const speech = speechMock([localKorean]), recordings = recordingMock();
+    const game = createGame(390, 844, 189, true, { speech, recordings, storage: { 'moon-rabbit-play-name': '별이' } });
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    const prefix = speech.spoken[speech.spoken.length - 1];
+    if (nameStarted) prefix.onstart();
+    assert(recordings.sources.length === 0 && recordings.timers.size === 1, 'Pending prefix had no loading deadline');
+    recordings.fireTimeouts(); await flushRecordingWork();
+    const fallback = speech.spoken[speech.spoken.length - 1], body = game.api.FRIEND_DIALOGUE.fox[1].text;
+    assert(speech.spoken.length === 3 && fallback.text === (nameStarted ? body : '별이야 ' + body), 'Prefix timeout repeated or omitted the personal name incorrectly');
+    assert(!fallback.text.includes('별이') || fallback.voice === localKorean, 'Prefix fallback sent a personal name to a nonlocal voice');
+    prefix.onend(); prefix.onerror(); await flushRecordingWork();
+    assert(recordings.sources.length === 0 && speech.spoken.length === 3, 'Timed-out prefix callback resumed the body or repeated fallback');
+    game.click('home-button');
+  }
+
+  // A failed body download preserves the same name-once rule as a prefix timeout.
+  for (const nameStarted of [false, true]) {
+    const speech = speechMock([localKorean]), recordings = recordingMock({ holdFetch: true });
+    const game = createGame(390, 844, 192, true, { speech, recordings, storage: { 'moon-rabbit-play-name': '별이' } });
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox');
+    const prefix = speech.spoken[speech.spoken.length - 1];
+    if (nameStarted) prefix.onstart();
+    recordings.requests[0].reject(Error('Body download failed')); await flushRecordingWork();
+    const body = game.api.FRIEND_DIALOGUE.fox[1].text;
+    assert(speech.spoken.length === 3 && speech.spoken[2].text === (nameStarted ? body : '별이야 ' + body), 'Body download fallback repeated or omitted the name incorrectly');
+    prefix.onend(); await flushRecordingWork();
+    assert(recordings.sources.length === 0 && speech.spoken.length === 3 && recordings.timers.size === 0, 'Failed body download resumed from a late prefix callback');
+    game.click('home-button');
+  }
+
+  // No local Korean voice means a generic whole recording, with no personal text sent to speech.
+  for (const voices of [[remoteKorean], [], [localEnglish]]) {
+    const speech = speechMock(voices), recordings = recordingMock();
+    const game = createGame(390, 844, 190, true, { speech, recordings, storage: { 'moon-rabbit-play-name': '별이' } });
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(game.G.feedback.includes('별이야 ') && recordings.requests.length === 1 && recordings.requests[0].url === 'assets/voices/fox/base-02.m4a?v=20261114', 'Unavailable local name did not use the generic whole recording');
+    assert(recordings.sources.length === 1 && recordings.sources[0].started && speech.spoken.every(utterance => !utterance.text.includes('별이')), 'Unavailable local voice leaked a name or blocked generic recording playback');
+    game.click('home-button');
+  }
+
+  // A matching saved-name lookup chooses a whole preset recording without a TTS prefix.
+  for (const withSpeech of [true, false]) {
+    const speech = withSpeech ? speechMock([localKorean]) : null;
+    const recordings = recordingMock(), crypto = nameHashMock();
+    const game = createGame(390, 844, 193, true, { speech, recordings, crypto,
+      storage: { 'moon-rabbit-play-name': '  별이  ' } });
+    assert(crypto.calls.length === 1 && crypto.calls[0].algorithm === 'SHA-256' && crypto.encoded[0] === '별이', 'Saved name was not normalized before the local preset lookup');
+    crypto.calls[0].resolve(presetDigestResult(game)); await flushRecordingWork();
+    game.start(); Math.random = () => 0;
+    const spokenBefore = speech ? speech.spoken.length : 0;
+    tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(recordings.requests.length === 1 && recordings.requests[0].url === 'assets/voices/fox/base-02-featured.m4a?v=20261114', 'Matching saved name did not choose its whole preset recording');
+    assert(recordings.sources.length === 1 && recordings.sources[0].started && (!speech || speech.spoken.length === spokenBefore), 'Preset recording added a TTS name or required Web Speech');
+    finishRecording(recordings);
+    tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(recordings.requests[1].url === 'assets/voices/fox/base-03.m4a?v=20261114', 'Preset lookup replaced an unaddressed line with a named recording');
+    game.click('home-button');
+  }
+
+  // Explicit save starts a fresh lookup, including browser-storage failure for the current game.
+  for (const blockStorage of [false, true]) {
+    const speech = speechMock([localKorean]), recordings = recordingMock(), crypto = nameHashMock();
+    const game = createGame(390, 844, 194, true, { speech, recordings, crypto, blockStorage });
+    assert(crypto.calls.length === 0, 'An empty name unnecessarily started a preset lookup');
+    game.elements['play-name-input'].value = '  별이  '; game.submit('play-name-form');
+    assert(crypto.calls.length === 1 && crypto.encoded[0] === '별이', 'Saving a name did not refresh its normalized preset lookup');
+    crypto.calls[0].resolve(presetDigestResult(game)); await flushRecordingWork();
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(recordings.requests[0].url.endsWith('/base-02-featured.m4a?v=20261114') && speech.spoken.length === 1, 'Saved preset name did not apply to the current game');
+    assert(blockStorage ? !game.storage['moon-rabbit-play-name'] : game.storage['moon-rabbit-play-name'] === '별이', 'Preset lookup changed nickname persistence behavior');
+    game.click('home-button');
+  }
+
+  // Unknown, pending, failed and unsupported lookups keep the ordinary local-prefix/body path.
+  for (const mode of ['mismatch', 'pending', 'rejected', 'throws', 'no-crypto', 'no-subtle', 'no-encoder']) {
+    const speech = speechMock([localKorean]), recordings = recordingMock();
+    const crypto = mode === 'no-crypto' ? undefined : nameHashMock({
+      rejectDigest: mode === 'rejected', throwDigest: mode === 'throws',
+      noSubtle: mode === 'no-subtle', noEncoder: mode === 'no-encoder',
+    });
+    const game = createGame(390, 844, 195, true, { speech, recordings, crypto, storage: { 'moon-rabbit-play-name': '별이' } });
+    if (mode === 'mismatch') crypto.calls[0].resolve(new Uint8Array(32).buffer);
+    await flushRecordingWork();
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    const prefix = speech.spoken[speech.spoken.length - 1];
+    assert(recordings.requests[0].url === 'assets/voices/fox/base-02-body.m4a?v=20261114' && prefix.text === '별이야,' && prefix.voice === localKorean, 'Unconfirmed preset lookup bypassed ordinary private-name handling: ' + mode);
+    prefix.onstart(); prefix.onend(); await flushRecordingWork();
+    assert(recordings.sources.length === 1 && recordings.sources[0].started, 'Unconfirmed preset lookup blocked body playback: ' + mode);
+    game.click('home-button');
+  }
+
+  // A stale successful lookup cannot select another name's audio after a save, clear, or rename-back.
+  for (const change of ['rename', 'clear', 'rename-back']) {
+    const speech = speechMock([localKorean]), recordings = recordingMock(), crypto = nameHashMock();
+    const game = createGame(390, 844, 196, true, { speech, recordings, crypto, storage: { 'moon-rabbit-play-name': '별이' } });
+    const staleLookup = crypto.calls[0];
+    if (change === 'clear') game.click('clear-play-name');
+    else {
+      game.elements['play-name-input'].value = '하늘'; game.submit('play-name-form');
+      if (change === 'rename-back') {
+        game.elements['play-name-input'].value = '별이'; game.submit('play-name-form');
+      }
+    }
+    staleLookup.resolve(presetDigestResult(game)); await flushRecordingWork();
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(recordings.requests[0].url === 'assets/voices/fox/base-02' + (change === 'clear' ? '' : '-body') + '.m4a?v=20261114', 'Stale lookup selected a preset recording after ' + change);
+    if (change === 'clear') assert(speech.spoken.length === 1 && game.G.feedback.includes('친구야 '), 'Cleared name survived in speech or feedback');
+    else assert(speech.spoken[1].text === (change === 'rename' ? '하늘아,' : '별이야,'), 'Stale lookup replaced the current name prefix');
+    game.click('home-button');
+  }
+
+  // Even an already matched name loses its preset immediately when the user saves another name.
+  {
+    const speech = speechMock([localKorean]), recordings = recordingMock(), crypto = nameHashMock();
+    const game = createGame(390, 844, 197, true, { speech, recordings, crypto, storage: { 'moon-rabbit-play-name': '별이' } });
+    crypto.calls[0].resolve(presetDigestResult(game)); await flushRecordingWork();
+    game.elements['play-name-input'].value = '하늘'; game.submit('play-name-form');
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(recordings.requests[0].url.endsWith('/base-02-body.m4a?v=20261114') && speech.spoken[1].text === '하늘아,', 'Pending replacement lookup retained the prior name preset');
+    game.click('home-button');
+  }
+
+  // A missing preset asset falls back to the actual saved name through a known local voice.
+  {
+    const speech = speechMock([localKorean]), recordings = recordingMock({ failFetch: true }), crypto = nameHashMock();
+    const game = createGame(390, 844, 198, true, { speech, recordings, crypto, storage: { 'moon-rabbit-play-name': '별이' } });
+    crypto.calls[0].resolve(presetDigestResult(game)); await flushRecordingWork();
+    game.start(); Math.random = () => 0; tapRecordingFriend(game, speech, 'fox'); await flushRecordingWork();
+    assert(recordings.requests[0].url.endsWith('/base-02-featured.m4a?v=20261114') && speech.spoken.length === 2 && speech.spoken[1].text === '별이야 ' + game.api.FRIEND_DIALOGUE.fox[1].text && speech.spoken[1].voice === localKorean, 'Preset download failure lost or exposed the actual saved name');
+    assert(recordings.sources.length === 0 && recordings.timers.size === 0, 'Failed preset download retained pending playback');
+    game.click('home-button');
+  }
+}
+
+function playingRecordingURL(recordings) {
+  const source = recordings.sources[recordings.sources.length - 1];
+  return source && source.buffer && source.buffer.mockURL;
+}
+
+async function checkGuidanceRecordings() {
+  // Play all six requests and fourteen deliveries using recorded main guidance without Web Speech.
+  {
+    const recordings = recordingMock({ includeGuidance: true });
+    const game = createGame(390, 844, 210, true, { recordings });
+    game.start(); await flushRecordingWork();
+    for (const [round, request] of requests.entries()) {
+      assert(game.G.requestIndex === round && playingRecordingURL(recordings) === 'assets/guidance/request-' + request.type + '-' + request.count + '.m4a?v=20261114', 'Recorded main request used the wrong vegetable or quantity');
+      for (let count = 1; count <= request.count; count++) {
+        for (let attempt = 0; !game.G.carrots.some(item => item.type === request.type) && attempt < 80; attempt++) game.step();
+        game.advance(150);
+        const item = game.G.carrots.find(item => item.type === request.type);
+        assert(item, 'Recorded guidance blocked the next vegetable');
+        const previous = recordings.sources[recordings.sources.length - 1];
+        game.tap(item.x, item.y);
+        assert(previous.stopped, 'Vegetable pickup did not stop recorded main guidance');
+        game.advance(400); await flushRecordingWork();
+        assert(playingRecordingURL(recordings) === 'assets/guidance/count-' + count + '.m4a?v=20261114', 'Recorded delivery count did not match visible quantity');
+      }
+      const countSource = recordings.sources[recordings.sources.length - 1];
+      game.advance(round === requests.length - 1 ? 1250 : 1900); await flushRecordingWork();
+      assert(countSource.stopped, 'Next request or ending did not stop the previous recorded count');
+    }
+    assert(game.G.score === 14 && game.G.ending && recordings.timers.size === 0, 'Recorded main guidance blocked the ending or retained work');
+    game.click('home-button');
+  }
+
+  // Rabbit and moon replies select full remaining quantities, "more" phrases and thanks.
+  {
+    const recordings = recordingMock({ includeGuidance: true });
+    const game = createGame(390, 844, 211, true, { recordings });
+    game.start(); await flushRecordingWork();
+    for (const [requestIndex, delivered, key] of [
+      [2, 0, 'find-carrot-3'], [2, 1, 'more-carrot-2'], [2, 2, 'more-carrot-1'],
+      [1, 0, 'find-cucumber-2'], [1, 1, 'more-cucumber-1'], [1, 2, 'thanks'],
+    ]) {
+      game.advance(1100);
+      game.G.requestIndex = requestIndex;
+      game.G.requestItems = Array(delivered).fill(requests[requestIndex].type);
+      game.G.requestReadyAt = delivered === requests[requestIndex].count ? game.G.clock + 1800 : 0;
+      game.G.carrots = [];
+      game.tap(game.G.rabbit.x, game.G.rabbit.y); await flushRecordingWork();
+      assert(playingRecordingURL(recordings) === 'assets/guidance/' + key + '.m4a?v=20261114', 'Recorded rabbit reply selected the wrong remaining-quantity asset: ' + key);
+      const source = recordings.sources[recordings.sources.length - 1];
+      game.tap(game.G.moonX, game.G.moonY); await flushRecordingWork();
+      assert(recordings.sources[recordings.sources.length - 1] === source && !source.stopped, 'Same-text moon reply restarted recorded guidance inside its cooldown');
+    }
+    game.click('home-button');
+  }
+
+  // Main recordings obey mute and pause, and resume with the current request.
+  for (const action of ['mute', 'pause']) {
+    const recordings = recordingMock({ includeGuidance: true });
+    const game = createGame(390, 844, 212, true, { recordings });
+    game.start(); await flushRecordingWork();
+    const source = recordings.sources[0], oldEnd = source.onended;
+    if (action === 'mute') game.sound.click(); else game.click('pause-toggle');
+    oldEnd();
+    assert(source.stopped && game.gains[0].gain.value === 0, 'Main guidance ignored stop action or restored muted audio: ' + action);
+    if (action === 'mute') game.sound.click(); else game.click('resume-button');
+    await flushRecordingWork();
+    assert(recordings.sources.length === 2 && playingRecordingURL(recordings).includes('/request-carrot-1.m4a'), 'Main guidance did not resume the current request: ' + action);
+    game.click('home-button');
+  }
+
+  // Recorded main-guidance failure uses normal device speech, and failed attempts remain retryable.
+  for (const failure of ['network', 'timeout', 'synchronous-and-speech']) {
+    const speech = speechMock([localKorean]);
+    const recordings = recordingMock({ includeGuidance: true, failFetch: failure === 'network',
+      holdFetch: failure === 'timeout', throwFetch: failure === 'synchronous-and-speech' });
+    if (failure === 'synchronous-and-speech') speech.failSpeak = true;
+    const game = createGame(390, 844, 213, true, { speech, recordings });
+    game.start();
+    if (failure === 'timeout') recordings.fireTimeouts();
+    await flushRecordingWork();
+    if (failure !== 'synchronous-and-speech') {
+      assert(speech.spoken.length === 1 && speech.spoken[0].text === '당근 한 개 줄래?', 'Main recording failure did not fall back to the original request');
+      speech.spoken[0].onerror();
+    }
+    recordings.failFetch = false; recordings.holdFetch = false; recordings.throwFetch = false; speech.failSpeak = false;
+    const before = recordings.requests.length;
+    game.tap(30, 30); await flushRecordingWork();
+    assert(recordings.requests.length === before + 1 && recordings.sources.length === 1 && recordings.sources[0].started, 'Failed main guidance retained a same-text cooldown and blocked immediate retry: ' + failure);
+    game.click('home-button');
+  }
+}
+
+let recordingRegressionFailure = null;
+let recordingRegressionComplete = false;
+checkRecordings().then(checkGuidanceRecordings).then(() => {
+  recordingRegressionComplete = true;
+  log('PASS prerecorded dialogue and main guidance, all request/count transitions without Web Speech, remaining-quantity recordings, loading overlap protection, output gain, fetch/decode/timeout fallback and retry, cancellation and stale callbacks, decoded cache reuse/eviction, local name-prefix/body sequencing, preset lookup/save/restore/races/fallback and nickname handling');
+}).catch(error => {
+  recordingRegressionFailure = error;
+  log('FAIL recording regression: ' + error.message + '\n' + (error.stack || ''));
+  if (typeof process !== 'undefined') process.exitCode = 1;
+});
+if (typeof drainMicrotasks === 'function') {
+  // JavaScriptCore's quit() does not propagate an exit code; surface async failures synchronously.
+  drainMicrotasks();
+  if (recordingRegressionFailure) throw recordingRegressionFailure;
+  assert(recordingRegressionComplete, 'Recording regressions left an unresolved asynchronous step');
+}

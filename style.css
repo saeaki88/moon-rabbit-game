@@ -158,6 +158,7 @@ h1, h2 { font-size: 25px; font-weight: 700; line-height: 1.35; }
 .welcome-intro { grid-area: intro; min-width: 0; }
 .welcome-card .first-play-picture { width: 156px; height: 66px; margin-bottom: 10px; }
 .welcome-card .welcome-description { font-size: 16px; margin: 8px 0 0; color: #c5d4dd; }
+.welcome-card .voice-note { font-size: 12px; margin: 6px 0 0; color: #b5c5d3; }
 .welcome-card #start-button { grid-area: play; min-height: 60px; }
 .name-settings {
   grid-area: name;

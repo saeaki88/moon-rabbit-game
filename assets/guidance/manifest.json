@@ -1,0 +1,721 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "file": "game.js",
+    "constant": "GUIDANCE_AUDIO"
+  },
+  "model": {
+    "repository": "Supertone/supertonic-3",
+    "revision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+    "sdkVersion": "1.3.1",
+    "source": "https://huggingface.co/Supertone/supertonic-3",
+    "license": "OpenRAIL-M",
+    "licenseUrl": "https://huggingface.co/Supertone/supertonic-3/blob/724fb5abbf5502583fb520898d45929e62f02c0b/LICENSE"
+  },
+  "generation": {
+    "language": "ko",
+    "speaker": "F3",
+    "rate": 0.96,
+    "steps": 10,
+    "provider": "CPUExecutionProvider",
+    "threads": 4,
+    "sampleRate": 44100,
+    "codec": "AAC-LC",
+    "container": "M4A",
+    "bitrate": 64000,
+    "channels": 1,
+    "trimFrameMs": 20,
+    "trimThresholdDb": -50,
+    "trimPaddingMs": 100,
+    "targetPeak": 0.7,
+    "maximumGain": 2,
+    "seedMethod": "First 8 SHA-256 hex digits of clip key",
+    "minimumAcceptedDuration": 0.15,
+    "personalNames": false,
+    "listeningVerified": false
+  },
+  "clips": [
+    {
+      "key": "request-carrot-1",
+      "file": "request-carrot-1.m4a",
+      "text": "당근 한 개 줄래?",
+      "spokenText": "당근 한 개 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "b96dacf3d8f8760abfd4d7087bf264d4747217ae259bc82d0e6c4823b3dd7a72",
+      "duration": 1.28,
+      "peak": 0.35187000036239624,
+      "sizeBytes": 15332,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.24,
+        "removedEnd": 0.36081632653061224,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.28,
+        "peak": 0.35187000036239624,
+        "rms": 0.10185540442933655,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.140625,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 1.8808163265306121,
+      "modelDuration": 1.8586922883987427
+    },
+    {
+      "key": "request-carrot-2",
+      "file": "request-carrot-2.m4a",
+      "text": "당근 두 개 줄래?",
+      "spokenText": "당근 두 개 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "50ceca0a428fdc6d131c7926511735838fa35345d0cd482ad037a57a6b1e8b33",
+      "duration": 1.32,
+      "peak": 0.4218120574951172,
+      "sizeBytes": 15649,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.22,
+        "removedEnd": 0.271156462585034,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.32,
+        "peak": 0.4218120574951172,
+        "rms": 0.10655171475128425,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.12121212121212122,
+        "leadingQuiet": 0.04,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 1.811156462585034,
+      "modelDuration": 1.8034381866455078
+    },
+    {
+      "key": "request-carrot-3",
+      "file": "request-carrot-3.m4a",
+      "text": "당근 세 개 줄래?",
+      "spokenText": "당근 세 개 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "cd5788263e5637c915ef9403749eeefaba948f62d196a9df5b4a27b53e98fa2e",
+      "duration": 1.26,
+      "peak": 0.7179092764854431,
+      "sizeBytes": 15091,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.32,
+        "removedEnd": 0.44013605442176873,
+        "gain": 1.4434830661885232
+      },
+      "verification": {
+        "duration": 1.26,
+        "peak": 0.7179092764854431,
+        "rms": 0.08501350315698586,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.15873015873015872,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.020136054421769,
+      "modelDuration": 1.9556766748428345
+    },
+    {
+      "key": "request-cucumber-1",
+      "file": "request-cucumber-1.m4a",
+      "text": "오이 한 개 줄래?",
+      "spokenText": "오이 한 개 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "c3cb6f0df0bafc693bca1ae430ce8d7242917cc5ec1e567d7dc7ad83487da2e2",
+      "duration": 1.1,
+      "peak": 0.3792445659637451,
+      "sizeBytes": 13733,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.26,
+        "removedEnd": 0.451156462585034,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.1,
+        "peak": 0.3792445659637451,
+        "rms": 0.10299409454901932,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.16363636363636364,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 1.811156462585034,
+      "modelDuration": 1.789324402809143
+    },
+    {
+      "key": "request-cucumber-2",
+      "file": "request-cucumber-2.m4a",
+      "text": "오이 두 개 줄래?",
+      "spokenText": "오이 두 개 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "d6725137f426ad2f14ce545691dca5820e7255fa092ad7982b02ee6c9a559476",
+      "duration": 1.06,
+      "peak": 0.4663282334804535,
+      "sizeBytes": 13538,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.24,
+        "removedEnd": 0.4414965986394558,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.06,
+        "peak": 0.4663282334804535,
+        "rms": 0.11046905365897726,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.18867924528301888,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 1.7414965986394557,
+      "modelDuration": 1.7389436960220337
+    },
+    {
+      "key": "request-cucumber-3",
+      "file": "request-cucumber-3.m4a",
+      "text": "오이 세 개 줄래?",
+      "spokenText": "오이 세 개 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "65d0d7eb10d98f880f1ee35bd699ea4b8dc39355a284fc962cda795cb6a6728d",
+      "duration": 1.18,
+      "peak": 0.6626098155975342,
+      "sizeBytes": 14341,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.34,
+        "removedEnd": 0.43047619047619046,
+        "gain": 1.432646359790047
+      },
+      "verification": {
+        "duration": 1.18,
+        "peak": 0.6626098155975342,
+        "rms": 0.08011104829970767,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.1694915254237288,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 1.9504761904761905,
+      "modelDuration": 1.88298761844635
+    },
+    {
+      "key": "find-carrot-1",
+      "file": "find-carrot-1.m4a",
+      "text": "당근 한 개 찾아 줄래?",
+      "spokenText": "당근 한 개 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "5f2dbc65ec50ed0bc631a420326c727a653e529c2bb3578587090631836f7f32",
+      "duration": 1.64,
+      "peak": 0.4764297306537628,
+      "sizeBytes": 18768,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.36,
+        "removedEnd": 0.2987755102040816,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.64,
+        "peak": 0.4764297306537628,
+        "rms": 0.09881849702761339,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.12195121951219512,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 2.2987755102040817,
+      "modelDuration": 2.2393651008605957
+    },
+    {
+      "key": "find-carrot-2",
+      "file": "find-carrot-2.m4a",
+      "text": "당근 두 개 찾아 줄래?",
+      "spokenText": "당근 두 개 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "09eaeacdc97b3bd4e4d0882d61bb8af5bb60184d962924da122b6b824f65cb80",
+      "duration": 1.58,
+      "peak": 0.45812568068504333,
+      "sizeBytes": 18230,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.24,
+        "removedEnd": 0.4091156462585034,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.58,
+        "peak": 0.45812568068504333,
+        "rms": 0.10647308924627824,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.11392405063291139,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 2.2291156462585033,
+      "modelDuration": 2.1943633556365967
+    },
+    {
+      "key": "find-carrot-3",
+      "file": "find-carrot-3.m4a",
+      "text": "당근 세 개 찾아 줄래?",
+      "spokenText": "당근 세 개 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "592b50bb8f3632d289f41ed5bb3402d0ce06094bd91cca4656afcd98b5ad7b4f",
+      "duration": 1.66,
+      "peak": 0.660065770149231,
+      "sizeBytes": 18665,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.36,
+        "removedEnd": 0.34843537414965986,
+        "gain": 1.6272399669676159
+      },
+      "verification": {
+        "duration": 1.66,
+        "peak": 0.660065770149231,
+        "rms": 0.08548423409983828,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.13253012048192772,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.36843537414966,
+      "modelDuration": 2.3428633213043213
+    },
+    {
+      "key": "find-cucumber-1",
+      "file": "find-cucumber-1.m4a",
+      "text": "오이 한 개 찾아 줄래?",
+      "spokenText": "오이 한 개 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "5206b5aad87da344aead97c29a1bc03a4698a8db6b290a4c65af9b48d3d9af4e",
+      "duration": 1.6,
+      "peak": 0.49499598145484924,
+      "sizeBytes": 17951,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.3,
+        "removedEnd": 0.3291156462585034,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.6,
+        "peak": 0.49499598145484924,
+        "rms": 0.10515868547331934,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.125,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.08
+      },
+      "rawDuration": 2.2291156462585033,
+      "modelDuration": 2.187194585800171
+    },
+    {
+      "key": "find-cucumber-2",
+      "file": "find-cucumber-2.m4a",
+      "text": "오이 두 개 찾아 줄래?",
+      "spokenText": "오이 두 개 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "ce802c26f87f67551d46b3ce728377aaac6079fd13ef3e50cea2782b728da2c5",
+      "duration": 1.48,
+      "peak": 0.48185017704963684,
+      "sizeBytes": 17049,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.34,
+        "removedEnd": 0.33945578231292517,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.48,
+        "peak": 0.48185017704963684,
+        "rms": 0.10246568466844463,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.14864864864864866,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.159455782312925,
+      "modelDuration": 2.1435751914978027
+    },
+    {
+      "key": "find-cucumber-3",
+      "file": "find-cucumber-3.m4a",
+      "text": "오이 세 개 찾아 줄래?",
+      "spokenText": "오이 세 개 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "d3f9bade26292c948af21dc95c9d72410dbef0fa5b0a3272d4674f4691f28d07",
+      "duration": 1.54,
+      "peak": 0.7495918273925781,
+      "sizeBytes": 17719,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.32,
+        "removedEnd": 0.4387755102040816,
+        "gain": 1.354487637643843
+      },
+      "verification": {
+        "duration": 1.54,
+        "peak": 0.7495918273925781,
+        "rms": 0.07559183063395374,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.14285714285714285,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.2987755102040817,
+      "modelDuration": 2.2949299812316895
+    },
+    {
+      "key": "more-carrot-1",
+      "file": "more-carrot-1.m4a",
+      "text": "당근 한 개 더 찾아 줄래?",
+      "spokenText": "당근 한 개 더 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "4da5a9440a4ea36bcd778a9cd5dca9e9272a285d994fa72b31299d266d1ddffc",
+      "duration": 1.8,
+      "peak": 0.37559980154037476,
+      "sizeBytes": 19635,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.3,
+        "removedEnd": 0.3380952380952381,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.8,
+        "peak": 0.37559980154037476,
+        "rms": 0.09952277365164938,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.15555555555555556,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.4380952380952383,
+      "modelDuration": 2.3938052654266357
+    },
+    {
+      "key": "more-carrot-2",
+      "file": "more-carrot-2.m4a",
+      "text": "당근 두 개 더 찾아 줄래?",
+      "spokenText": "당근 두 개 더 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "c18d4787d7eb8753a45ac5db8ded85cdad90b8bef63fc05d04202914789ed9f2",
+      "duration": 1.66,
+      "peak": 0.5626251697540283,
+      "sizeBytes": 18949,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.28,
+        "removedEnd": 0.4284353741496599,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.66,
+        "peak": 0.5626251697540283,
+        "rms": 0.10897550969536077,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.12048192771084337,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.36843537414966,
+      "modelDuration": 2.345571756362915
+    },
+    {
+      "key": "more-carrot-3",
+      "file": "more-carrot-3.m4a",
+      "text": "당근 세 개 더 찾아 줄래?",
+      "spokenText": "당근 세 개 더 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "d5f7d1b0e03e80ba81a111bed9232e59c180bb5df45260e8cc9fbe175bed9dcf",
+      "duration": 1.88,
+      "peak": 0.7397482395172119,
+      "sizeBytes": 20478,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.3,
+        "removedEnd": 0.3277551020408163,
+        "gain": 1.735246509131872
+      },
+      "verification": {
+        "duration": 1.88,
+        "peak": 0.7397482395172119,
+        "rms": 0.09083533510965759,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.11702127659574468,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.507755102040816,
+      "modelDuration": 2.491901159286499
+    },
+    {
+      "key": "more-cucumber-1",
+      "file": "more-cucumber-1.m4a",
+      "text": "오이 한 개 더 찾아 줄래?",
+      "spokenText": "오이 한 개 더 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "d1a8a51cf8cb3858689c123a4d50c641baf276ecae9676466722be315afbae8f",
+      "duration": 1.68,
+      "peak": 0.43548646569252014,
+      "sizeBytes": 18807,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.36,
+        "removedEnd": 0.32843537414965984,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.68,
+        "peak": 0.43548646569252014,
+        "rms": 0.10608952402022634,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.11904761904761904,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.36843537414966,
+      "modelDuration": 2.3339784145355225
+    },
+    {
+      "key": "more-cucumber-2",
+      "file": "more-cucumber-2.m4a",
+      "text": "오이 두 개 더 찾아 줄래?",
+      "spokenText": "오이 두 개 더 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "1ad367ed1e26b4ce9ee0557ee3259e9b76573efce00a8eda44accad71b6f30ea",
+      "duration": 1.58,
+      "peak": 0.461614727973938,
+      "sizeBytes": 17524,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.3,
+        "removedEnd": 0.41877551020408166,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 1.58,
+        "peak": 0.461614727973938,
+        "rms": 0.10808222259900588,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.12658227848101267,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.2987755102040817,
+      "modelDuration": 2.285933256149292
+    },
+    {
+      "key": "more-cucumber-3",
+      "file": "more-cucumber-3.m4a",
+      "text": "오이 세 개 더 찾아 줄래?",
+      "spokenText": "오이 세 개 더 찾아 줄래?",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "c855ea80f8cae06e19fb2569278fd136bb9eabe2e6e2b64738635fa73c6d2726",
+      "duration": 1.8,
+      "peak": 0.6504780650138855,
+      "sizeBytes": 19767,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.44,
+        "removedEnd": 0.2677551020408163,
+        "gain": 1.2122544934715156
+      },
+      "verification": {
+        "duration": 1.8,
+        "peak": 0.6504780650138855,
+        "rms": 0.06797278229477163,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.14444444444444443,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 2.507755102040816,
+      "modelDuration": 2.4406721591949463
+    },
+    {
+      "key": "count-1",
+      "file": "count-1.m4a",
+      "text": "하나",
+      "spokenText": "하나",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "852ba7c3526931aafc6642dad21f8165afb3845f41a44c06c4cf8181fca44136",
+      "duration": 0.64,
+      "peak": 0.3819446861743927,
+      "sizeBytes": 9706,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.28,
+        "removedEnd": 0.5428571428571428,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 0.64,
+        "peak": 0.3819446861743927,
+        "rms": 0.09650703542721492,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.25,
+        "leadingQuiet": 0.06,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 1.4628571428571429,
+      "modelDuration": 1.4460417032241821
+    },
+    {
+      "key": "count-2",
+      "file": "count-2.m4a",
+      "text": "둘",
+      "spokenText": "둘",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "0fbcd4143a9a27e12dfe18890ae28af95574eb3d0638e29af779e4e15e590b33",
+      "duration": 0.54,
+      "peak": 0.34077656269073486,
+      "sizeBytes": 8628,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.52,
+        "removedEnd": 0.40285714285714286,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 0.54,
+        "peak": 0.34077656269073486,
+        "rms": 0.09345685654833273,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.37037037037037035,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 1.4628571428571429,
+      "modelDuration": 1.4425883293151855
+    },
+    {
+      "key": "count-3",
+      "file": "count-3.m4a",
+      "text": "셋",
+      "spokenText": "셋",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "5ccfb582f4acd37f420f2019c93dbcc85835ef0821cc503c8ce514c34e9db406",
+      "duration": 0.54,
+      "peak": 0.7658777236938477,
+      "sizeBytes": 8873,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.4,
+        "removedEnd": 0.5228571428571429,
+        "gain": 1.4536489815682345
+      },
+      "verification": {
+        "duration": 0.54,
+        "peak": 0.7658777236938477,
+        "rms": 0.0897056659434597,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.37037037037037035,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 1.4628571428571429,
+      "modelDuration": 1.4419918060302734
+    },
+    {
+      "key": "thanks",
+      "file": "thanks.m4a",
+      "text": "고마워",
+      "spokenText": "고마워",
+      "speaker": "F3",
+      "rate": 0.96,
+      "sha256": "ab2d4f1768fa10477930a31234a2a1878447099b8c1cdf09456ed9536e81b441",
+      "duration": 0.84,
+      "peak": 0.33137595653533936,
+      "sizeBytes": 11212,
+      "modelRevision": "724fb5abbf5502583fb520898d45929e62f02c0b",
+      "sdkVersion": "1.3.1",
+      "processing": {
+        "removedStart": 0.24,
+        "removedEnd": 0.38285714285714284,
+        "gain": 2.0
+      },
+      "verification": {
+        "duration": 0.84,
+        "peak": 0.33137595653533936,
+        "rms": 0.0963515669006213,
+        "finite": true,
+        "clippedSamples": 0,
+        "quietFrameFraction": 0.23809523809523808,
+        "leadingQuiet": 0.1,
+        "trailingQuiet": 0.1
+      },
+      "rawDuration": 1.4628571428571429,
+      "modelDuration": 1.4595857858657837
+    }
+  ]
+}
